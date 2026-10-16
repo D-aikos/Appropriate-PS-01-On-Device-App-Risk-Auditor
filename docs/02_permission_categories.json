@@ -1,0 +1,975 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "document_metadata": {
+    "id": "02_PERMISSION_CATEGORIES",
+    "title": "Permission Categories - In-Depth Rules, Policies, and Security Regulations",
+    "project": "Appropriate-PS-01-On-Device-App-Risk-Auditor",
+    "problem_statement_id": "PS-01",
+    "version": "1.0.0",
+    "specification_status": "APPROVED",
+    "date_established": "2026-10-16",
+    "scope": "Comprehensive formal specification of the 9 mandatory risk categories, scoring weights, special access rules, combination attack vectors, deduplication policies, and three-reason enforcement algorithms for on-device app risk auditing.",
+    "target_audience": [
+      "Local Deterministic Risk Engine (Developer 3)",
+      "Backend Scanner & Special Access Adapters (Developer 2)",
+      "Auditor UI & Evidence Display (Developer 1)",
+      "Security Auditors and Compliance Analysts"
+    ]
+  },
+  "governance_and_compliance_principles": {
+    "least_privilege": "Applications must only request permissions strictly required for core user-facing functionality. Any over-privileged access is flagged.",
+    "zero_cloud_data_leakage": "All permission extraction, special-access probing, and rule evaluation must execute 100% locally on-device without cloud exfiltration.",
+    "special_access_primacy": "Platform-level special capabilities (Accessibility, Device Admin, Overlay, Package Installer, Usage Stats) carry the highest weight multiplier (2.0) and highest risk ceiling due to their potential for complete device or credential compromise.",
+    "runtime_vs_declared_differentiation": "Permissions declared in the manifest without active runtime grants receive nominal visibility points (1 pt, cap 3 per category) and cannot trigger critical runtime exploitation findings.",
+    "three_reason_rule": "To prevent false alarms driven by a single noisy signal, any application scoring 50 or higher (High or Critical bands) MUST have at least three distinct, evidence-backed findings. If fewer than 3 distinct findings exist, the score is strictly capped at 49 (Medium band).",
+    "deterministic_scoring": "Given the identical set of declared permissions, granted permissions, and special access states, the scoring algorithm must produce the exact same integer score in the range [0, 100]."
+  },
+  "scoring_scale_and_bands": {
+    "score_range": {
+      "min": 0,
+      "max": 100,
+      "bounding_function": "score.coerceIn(0, 100)"
+    },
+    "bands": [
+      {
+        "level": "LOW",
+        "min_score": 0,
+        "max_score": 24,
+        "display_name": "Low Risk",
+        "description": "Standard application with minimal or expected permissions. Routine monitoring.",
+        "action_guidance": "No immediate user action required."
+      },
+      {
+        "level": "MEDIUM",
+        "min_score": 25,
+        "max_score": 49,
+        "display_name": "Medium Risk",
+        "description": "Elevated access (e.g. Camera/Mic, Background Persistence, or ungranted high permissions).",
+        "action_guidance": "Review recommended. Revoke permissions if not required for user workflows."
+      },
+      {
+        "level": "HIGH",
+        "min_score": 50,
+        "max_score": 74,
+        "display_name": "High Risk",
+        "description": "Significant attack surface or high-risk combination pattern. Must possess >= 3 distinct reasons.",
+        "action_guidance": "Prompt user review. High probability of unnecessary data access or background operation."
+      },
+      {
+        "level": "CRITICAL",
+        "min_score": 75,
+        "max_score": 100,
+        "display_name": "Critical Risk",
+        "description": "Severe exposure (e.g. Active Device Admin, Overlay Stealer, Ransomware pattern). Must possess >= 3 distinct reasons.",
+        "action_guidance": "Immediate remediation advised. Disable special access, revoke critical permissions, or uninstall application."
+      }
+    ],
+    "three_reason_enforcement": {
+      "threshold_score": 50,
+      "min_distinct_rule_ids": 3,
+      "capped_score_on_failure": 49,
+      "target_band_on_failure": "MEDIUM",
+      "rationale": "Prevents isolated false positives from escalating an app to High or Critical severity without corroborated risk signals."
+    }
+  },
+  "permission_categories": [
+    {
+      "category_id": "SPECIAL_ACCESS",
+      "category_number": 1,
+      "display_name": "Special Access",
+      "base_weight_multiplier": 2.0,
+      "priority_rank": 1,
+      "mandate_compliance": "HIGHEST_WEIGHT",
+      "description": "Platform-level capabilities, privileged system settings, accessibility services, and administrative control hooks that bypass or transcend standard Android runtime permission sandboxing.",
+      "threat_profile": {
+        "primary_threats": [
+          "Complete device compromise and remote wiping via Device Administration",
+          "Real-time screen scraping, UI automated clicking, and keystroke logging via Accessibility Service",
+          "Overlay-based credential harvesting and tapjacking via System Alert Window",
+          "Interception of 2FA OTP tokens and private chats via Notification Listener",
+          "Silent sideloading and payload dropper behavior via Request Install Packages",
+          "Continuous user activity and competitive profiling via Package Usage Stats"
+        ],
+        "owasp_mobile_reference": [
+          "M1: Improper Platform Usage",
+          "M6: Insecure Authorization"
+        ],
+        "mitre_attack_mobile": [
+          "T1417: Input Capture",
+          "T1453: Device Lockout",
+          "T1451: Application Dropper",
+          "T1437: Application Layer Protocol"
+        ]
+      },
+      "scoring_rules": {
+        "evaluation_mode": "INDIVIDUAL_CAPABILITY_POINTS",
+        "pts_special_accessibility_enabled": 25,
+        "pts_special_accessibility_declared": 5,
+        "pts_special_device_admin_active": 30,
+        "pts_special_device_admin_declared": 5,
+        "pts_special_overlay_granted": 18,
+        "pts_special_overlay_declared": 4,
+        "pts_special_notification_listener_enabled": 20,
+        "pts_special_notification_listener_declared": 4,
+        "pts_special_install_packages_granted": 18,
+        "pts_special_install_packages_declared": 4,
+        "pts_special_usage_stats_granted": 12,
+        "pts_special_usage_stats_declared": 0,
+        "category_ceiling": 100,
+        "nominal_declared_cap": "Per-capability declared weight applies"
+      },
+      "special_access_components": [
+        {
+          "type": "ACCESSIBILITY_SERVICE",
+          "inspection_mechanism": "AccessibilityManager.getEnabledAccessibilityServiceList() & Manifest BIND_ACCESSIBILITY_SERVICE",
+          "active_rule_id": "RULE_SPECIAL_ACCESSIBILITY_ENABLED",
+          "active_points": 25,
+          "active_severity": "CRITICAL",
+          "declared_rule_id": "RULE_SPECIAL_ACCESSIBILITY_DECLARED",
+          "declared_points": 5,
+          "declared_severity": "LOW",
+          "threat": "Can read all UI text on screen across any app, intercept passwords, and simulate arbitrary touch gestures.",
+          "remediation": "Revoke Accessibility access in Settings > Accessibility if the app is not a legitimate accessibility tool."
+        },
+        {
+          "type": "DEVICE_ADMIN",
+          "inspection_mechanism": "DevicePolicyManager.isAdminActive(ComponentName) & Manifest BIND_DEVICE_ADMIN",
+          "active_rule_id": "RULE_SPECIAL_DEVICE_ADMIN_ACTIVE",
+          "active_points": 30,
+          "active_severity": "CRITICAL",
+          "declared_rule_id": "RULE_SPECIAL_DEVICE_ADMIN_DECLARED",
+          "declared_points": 5,
+          "declared_severity": "LOW",
+          "threat": "System-level administrative authority capable of altering screen lock, enforcing storage encryption, wiping device data, and blocking uninstallation.",
+          "remediation": "Deactivate Device Administrator in Settings > Security > Device Admin Apps immediately."
+        },
+        {
+          "type": "SYSTEM_ALERT_WINDOW",
+          "inspection_mechanism": "Settings.canDrawOverlays(Context) / AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW & Manifest SYSTEM_ALERT_WINDOW",
+          "active_rule_id": "RULE_SPECIAL_OVERLAY_GRANTED",
+          "active_points": 18,
+          "active_severity": "MEDIUM",
+          "declared_rule_id": "RULE_SPECIAL_OVERLAY_DECLARED",
+          "declared_points": 4,
+          "declared_severity": "LOW",
+          "threat": "Displays floating overlays over other apps, facilitating tapjacking, clickjacking, and credential phishing overlays.",
+          "remediation": "Disable 'Display over other apps' in Settings > Apps > Special App Access."
+        },
+        {
+          "type": "NOTIFICATION_LISTENER",
+          "inspection_mechanism": "NotificationManagerCompat.getEnabledListenerPackages() & Manifest BIND_NOTIFICATION_LISTENER_SERVICE",
+          "active_rule_id": "RULE_SPECIAL_NOTIFICATION_LISTENER_ENABLED",
+          "active_points": 20,
+          "active_severity": "HIGH",
+          "declared_rule_id": "RULE_SPECIAL_NOTIFICATION_LISTENER_DECLARED",
+          "declared_points": 4,
+          "declared_severity": "LOW",
+          "threat": "Full visibility into incoming notifications, exposing SMS OTP verification codes, private chats, emails, and sensitive alerts.",
+          "remediation": "Disable Notification Access in Settings > Special App Access > Device & app notifications."
+        },
+        {
+          "type": "REQUEST_INSTALL_PACKAGES",
+          "inspection_mechanism": "PackageManager.canRequestPackageInstalls() & Manifest REQUEST_INSTALL_PACKAGES",
+          "active_rule_id": "RULE_SPECIAL_INSTALL_PACKAGES_GRANTED",
+          "active_points": 18,
+          "active_severity": "HIGH",
+          "declared_rule_id": "RULE_SPECIAL_INSTALL_PACKAGES_DECLARED",
+          "declared_points": 4,
+          "declared_severity": "LOW",
+          "threat": "App can download unvetted APK payloads from remote servers and trigger on-device installation dialogs (dropper vector).",
+          "remediation": "Revoke 'Install unknown apps' permission in Special App Access settings."
+        },
+        {
+          "type": "USAGE_STATS",
+          "inspection_mechanism": "AppOpsManager.checkOpNoThrow(OPSTR_GET_USAGE_STATS) & Manifest PACKAGE_USAGE_STATS",
+          "active_rule_id": "RULE_SPECIAL_USAGE_STATS_GRANTED",
+          "active_points": 12,
+          "active_severity": "MEDIUM",
+          "declared_rule_id": null,
+          "declared_points": 0,
+          "declared_severity": "INFO",
+          "threat": "Detailed surveillance of user device habits, logging which apps are used, launch timestamps, and session durations.",
+          "remediation": "Disable Usage Access in Settings > Special App Access > Usage Access."
+        }
+      ],
+      "related_combinations": [
+        "RULE_COMBO_OVERLAY_STEALER",
+        "RULE_COMBO_MALICIOUS_DROPPER",
+        "RULE_COMBO_RANSOMWARE_PATTERN",
+        "RULE_HEURISTIC_SIDELOADED_HIGH_RISK"
+      ]
+    },
+    {
+      "category_id": "SMS",
+      "category_number": 2,
+      "display_name": "SMS",
+      "base_weight_multiplier": 1.5,
+      "priority_rank": 2,
+      "mandate_compliance": "SECOND_HIGHEST_WEIGHT",
+      "description": "Permissions governing transmission, interception, reading, and receipt of Short Message Service (SMS), Multimedia Messaging Service (MMS), and WAP push notifications.",
+      "threat_profile": {
+        "primary_threats": [
+          "Direct financial toll fraud through silent transmission to premium-rate shortcodes",
+          "Interception of one-time passwords (OTPs) and banking multi-factor authentication codes",
+          "Mass distribution of phishing or malicious links to contact lists via SMS broadcast",
+          "Exfiltration of private text correspondence"
+        ],
+        "owasp_mobile_reference": [
+          "M3: Insecure Communication",
+          "M4: Insecure Authentication"
+        ],
+        "mitre_attack_mobile": [
+          "T1412: Capture SMS Data",
+          "T1448: Toll Fraud"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 8,
+        "max_category_cap": 16,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_SMS",
+        "severity": "HIGH"
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.SEND_SMS",
+          "protection_level": "dangerous",
+          "threat": "Dispatches SMS messages directly without user interaction; primary toll fraud vector."
+        },
+        {
+          "name": "android.permission.RECEIVE_SMS",
+          "protection_level": "dangerous",
+          "threat": "Listens for incoming SMS; primary OTP interception vector."
+        },
+        {
+          "name": "android.permission.READ_SMS",
+          "protection_level": "dangerous",
+          "threat": "Reads stored text messages from provider inbox/sent database."
+        },
+        {
+          "name": "android.permission.RECEIVE_MMS",
+          "protection_level": "dangerous",
+          "threat": "Intercepts multimedia messaging payloads."
+        },
+        {
+          "name": "android.permission.RECEIVE_WAP_PUSH",
+          "protection_level": "dangerous",
+          "threat": "Processes WAP push broadcasts, historically exploited for remote carrier configuration hijacking."
+        },
+        {
+          "name": "android.permission.BROADCAST_SMS",
+          "protection_level": "signatureOrSystem",
+          "threat": "Broadcasts synthetic SMS receipts across the system."
+        }
+      ],
+      "related_combinations": [
+        "RULE_COMBO_TOLL_FRAUD",
+        "RULE_COMBO_SPYWARE",
+        "RULE_COMBO_OVERLAY_STEALER"
+      ],
+      "remediation": "Revoke SMS permissions in Android Settings > Apps > Permissions unless the app is designated as the default SMS application."
+    },
+    {
+      "category_id": "CONTACTS_AND_CALLS",
+      "category_number": 3,
+      "display_name": "Contacts & Call Logs",
+      "base_weight_multiplier": 1.4,
+      "priority_rank": 3,
+      "mandate_compliance": "HIGH_WEIGHT",
+      "description": "Access to device address book contacts, synchronized account directories, call history logs, and outgoing call routing hooks.",
+      "threat_profile": {
+        "primary_threats": [
+          "Complete exfiltration of personal address books and corporate contact directories",
+          "Reconstruction of victim social graph, frequent associates, and calling habits",
+          "Interception, modification, or redirection of outgoing phone calls",
+          "Harvesting of email accounts registered on the device"
+        ],
+        "owasp_mobile_reference": [
+          "M2: Insecure Data Storage",
+          "M3: Insecure Communication"
+        ],
+        "mitre_attack_mobile": [
+          "T1432: Access Contact List",
+          "T1433: Access Call Log"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 6,
+        "max_category_cap": 14,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_CONTACTS_CALLS",
+        "severity": "MEDIUM"
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.READ_CONTACTS",
+          "protection_level": "dangerous",
+          "threat": "Reads full contact records including names, numbers, addresses, and emails."
+        },
+        {
+          "name": "android.permission.WRITE_CONTACTS",
+          "protection_level": "dangerous",
+          "threat": "Modifies, injects, or deletes address book records."
+        },
+        {
+          "name": "android.permission.GET_ACCOUNTS",
+          "protection_level": "dangerous",
+          "threat": "Enumerates registered Google and third-party user accounts."
+        },
+        {
+          "name": "android.permission.READ_CALL_LOG",
+          "protection_level": "dangerous",
+          "threat": "Extracts timestamps, durations, phone numbers, and names of all inbound/outbound calls."
+        },
+        {
+          "name": "android.permission.WRITE_CALL_LOG",
+          "protection_level": "dangerous",
+          "threat": "Alters or deletes evidence of malicious dialing from call history."
+        },
+        {
+          "name": "android.permission.PROCESS_OUTGOING_CALLS",
+          "protection_level": "dangerous",
+          "threat": "Intercepts outgoing dial attempts; can divert calls or abort emergency calls."
+        }
+      ],
+      "related_combinations": [
+        "RULE_COMBO_SPYWARE",
+        "RULE_COMBO_OVERLAY_STEALER"
+      ],
+      "remediation": "Restrict Contacts and Call Logs access in system permissions. Legitimate access is rarely needed outside communication apps."
+    },
+    {
+      "category_id": "CAMERA_AND_MIC",
+      "category_number": 4,
+      "display_name": "Camera & Microphone",
+      "base_weight_multiplier": 1.3,
+      "priority_rank": 4,
+      "mandate_compliance": "ELEVATED_WEIGHT",
+      "description": "Real-time acoustic and visual capture capabilities including hardware camera sensors, ambient microphones, and audio subsystem outputs.",
+      "threat_profile": {
+        "primary_threats": [
+          "Covert eavesdropping on room conversations, confidential meetings, and phone calls",
+          "Silent image/video capture of user environment, physical surroundings, or user faces",
+          "Biometric credential capture without user knowledge"
+        ],
+        "owasp_mobile_reference": [
+          "M1: Improper Platform Usage"
+        ],
+        "mitre_attack_mobile": [
+          "T1430: Location Tracking",
+          "T1429: Audio Capture",
+          "T1428: Video Capture"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 6,
+        "max_category_cap": 12,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_CAMERA_MIC",
+        "severity": "MEDIUM"
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.CAMERA",
+          "protection_level": "dangerous",
+          "threat": "Captures photos and video streams from front and rear cameras."
+        },
+        {
+          "name": "android.permission.RECORD_AUDIO",
+          "protection_level": "dangerous",
+          "threat": "Records ambient acoustic audio continuously via device microphone."
+        },
+        {
+          "name": "android.permission.CAPTURE_AUDIO_OUTPUT",
+          "protection_level": "signatureOrSystem",
+          "threat": "Captures raw audio streams produced by other applications."
+        },
+        {
+          "name": "android.permission.CAPTURE_VIDEO_OUTPUT",
+          "protection_level": "signatureOrSystem",
+          "threat": "Captures display framebuffer video streams."
+        }
+      ],
+      "related_combinations": [
+        "RULE_COMBO_AUDIO_SURVEILLANCE"
+      ],
+      "remediation": "Change camera and microphone permission grants to 'Only while using the app' or revoke entirely if unexpected."
+    },
+    {
+      "category_id": "LOCATION",
+      "category_number": 5,
+      "display_name": "Location",
+      "base_weight_multiplier": 1.3,
+      "priority_rank": 5,
+      "mandate_compliance": "ELEVATED_WEIGHT",
+      "description": "Geographical positioning and spatial tracking capabilities including satellite GPS, Wi-Fi tri-lateration, cellular tower trilateration, and background tracking.",
+      "threat_profile": {
+        "primary_threats": [
+          "Persistent real-time physical stalking and pattern-of-life profiling",
+          "De-anonymization of home, work, and sensitive medical/social locations",
+          "Geofenced malware triggering when victim enters specific geographical regions"
+        ],
+        "owasp_mobile_reference": [
+          "M1: Improper Platform Usage"
+        ],
+        "mitre_attack_mobile": [
+          "T1430: Location Tracking"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 6,
+        "max_category_cap": 12,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_LOCATION",
+        "severity": "MEDIUM"
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.ACCESS_FINE_LOCATION",
+          "protection_level": "dangerous",
+          "threat": "High-accuracy GNSS/GPS coordinates within meters."
+        },
+        {
+          "name": "android.permission.ACCESS_COARSE_LOCATION",
+          "protection_level": "dangerous",
+          "threat": "Cell/Wi-Fi derived location approximate to block level."
+        },
+        {
+          "name": "android.permission.ACCESS_BACKGROUND_LOCATION",
+          "protection_level": "dangerous",
+          "threat": "Continuous location acquisition while app is in background/closed."
+        }
+      ],
+      "deduplication_policy": "If ACCESS_FINE_LOCATION is granted, ACCESS_COARSE_LOCATION is collapsed and ignored for points calculation to prevent double-counting.",
+      "related_combinations": [
+        "RULE_COMBO_SPYWARE"
+      ],
+      "remediation": "Switch location permission to 'Approximate' or 'While using app'. Deny 'Allow all the time' background location."
+    },
+    {
+      "category_id": "PHONE_AND_IDENTITY",
+      "category_number": 6,
+      "display_name": "Phone & Identity",
+      "base_weight_multiplier": 1.2,
+      "priority_rank": 6,
+      "mandate_compliance": "MODERATE_WEIGHT",
+      "description": "Hardware and telephony identifiers, cellular network subscriber identity (IMSI), device hardware ID (IMEI), phone numbers, and telephony call state.",
+      "threat_profile": {
+        "primary_threats": [
+          "Persistent device fingerprinting and ad-tracking across factory resets (via IMEI/IMSI on older SDKs)",
+          "Unauthorized call placement resulting in financial loss or voice spam",
+          "Eavesdropping on cellular call state transitions (ringing, off-hook, idle)"
+        ],
+        "owasp_mobile_reference": [
+          "M1: Improper Platform Usage"
+        ],
+        "mitre_attack_mobile": [
+          "T1412: Capture Device Identifiers"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 5,
+        "max_category_cap": 10,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_PHONE_IDENTITY",
+        "severity": "LOW"
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.READ_PHONE_STATE",
+          "protection_level": "dangerous",
+          "threat": "Reads device telephony state, carrier network, and on legacy SDKs, unique hardware IDs."
+        },
+        {
+          "name": "android.permission.READ_PHONE_NUMBERS",
+          "protection_level": "dangerous",
+          "threat": "Retrieves the subscriber's MSISDN mobile phone number."
+        },
+        {
+          "name": "android.permission.CALL_PHONE",
+          "protection_level": "dangerous",
+          "threat": "Initiates voice phone calls directly without launching dialer UI."
+        },
+        {
+          "name": "android.permission.ANSWER_PHONE_CALLS",
+          "protection_level": "dangerous",
+          "threat": "Automatically answers incoming phone calls programmatically."
+        },
+        {
+          "name": "android.permission.READ_PRECISE_PHONE_STATE",
+          "protection_level": "signatureOrSystem",
+          "threat": "Deep cellular telemetry access."
+        },
+        {
+          "name": "android.permission.READ_PRIVILEGED_PHONE_STATE",
+          "protection_level": "signatureOrSystem",
+          "threat": "System-level carrier info access."
+        },
+        {
+          "name": "android.permission.USE_SIP",
+          "protection_level": "dangerous",
+          "threat": "VoIP SIP protocol session initiation."
+        },
+        {
+          "name": "android.permission.ADD_VOICEMAIL",
+          "protection_level": "dangerous",
+          "threat": "Injects voicemail messages."
+        }
+      ],
+      "related_combinations": [],
+      "remediation": "Revoke Phone permissions unless required for voice calling or dialer functionality."
+    },
+    {
+      "category_id": "STORAGE_AND_MEDIA",
+      "category_number": 7,
+      "display_name": "Storage & Media",
+      "base_weight_multiplier": 1.1,
+      "priority_rank": 7,
+      "mandate_compliance": "MODERATE_WEIGHT",
+      "description": "Broad external filesystem storage access, scoped media collections (photos, videos, audio), and all-files management privileges.",
+      "threat_profile": {
+        "primary_threats": [
+          "Ransomware encryption or mass wiping of user documents and files on shared storage",
+          "Theft of sensitive documents, tax filings, downloads, and cleartext credentials",
+          "Mass scraping of personal photos containing embedded EXIF GPS coordinates"
+        ],
+        "owasp_mobile_reference": [
+          "M2: Insecure Data Storage"
+        ],
+        "mitre_attack_mobile": [
+          "T1409: Access Sensitive Data in Shared Storage",
+          "T1453: Device Lockout"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 5,
+        "max_category_cap": 10,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_STORAGE_MEDIA",
+        "severity": "LOW"
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.READ_EXTERNAL_STORAGE",
+          "protection_level": "dangerous",
+          "threat": "Reads all files on shared storage on Android 9 and below; legacy storage access."
+        },
+        {
+          "name": "android.permission.WRITE_EXTERNAL_STORAGE",
+          "protection_level": "dangerous",
+          "threat": "Writes or deletes shared files on external storage; legacy ransomware vector."
+        },
+        {
+          "name": "android.permission.MANAGE_EXTERNAL_STORAGE",
+          "protection_level": "appop",
+          "threat": "All-files access bypassing scoped storage restrictions on Android 11+; highest file risk."
+        },
+        {
+          "name": "android.permission.READ_MEDIA_IMAGES",
+          "protection_level": "dangerous",
+          "threat": "Accesses user photo gallery collections (Android 13+)."
+        },
+        {
+          "name": "android.permission.READ_MEDIA_VIDEO",
+          "protection_level": "dangerous",
+          "threat": "Accesses user video library (Android 13+)."
+        },
+        {
+          "name": "android.permission.READ_MEDIA_AUDIO",
+          "protection_level": "dangerous",
+          "threat": "Accesses user music and audio recordings (Android 13+)."
+        },
+        {
+          "name": "android.permission.ACCESS_MEDIA_LOCATION",
+          "protection_level": "dangerous",
+          "threat": "Retrieves unredacted EXIF GPS latitude/longitude from photos."
+        }
+      ],
+      "deduplication_policy": "If MANAGE_EXTERNAL_STORAGE is granted, legacy READ/WRITE_EXTERNAL_STORAGE findings are consolidated into the all-files access finding.",
+      "related_combinations": [
+        "RULE_COMBO_RANSOMWARE_PATTERN",
+        "RULE_COMBO_MALICIOUS_DROPPER"
+      ],
+      "remediation": "Deny 'All files access'. Restrict media access to selected photos using the Android Photo Picker."
+    },
+    {
+      "category_id": "BACKGROUND_AND_PERSISTENCE",
+      "category_number": 8,
+      "display_name": "Background & Persistence",
+      "base_weight_multiplier": 1.2,
+      "priority_rank": 8,
+      "mandate_compliance": "MODERATE_ELEVATED_WEIGHT",
+      "description": "Capabilities enabling execution survivability across reboots, foreground service hooks, exact wake timers, wake locks, and battery throttling exemptions.",
+      "threat_profile": {
+        "primary_threats": [
+          "Automatic payload launch immediately following device boot without user interaction",
+          "Persistent daemon execution that resists OS low-memory process termination",
+          "Unthrottled background execution causing battery exhaustion and continuous C2 beaconing"
+        ],
+        "owasp_mobile_reference": [
+          "M1: Improper Platform Usage"
+        ],
+        "mitre_attack_mobile": [
+          "T1402: Broadcast Receivers",
+          "T1424: Prevent Application Termination"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 4,
+        "max_category_cap": 8,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_BG_PERSISTENCE",
+        "severity": "LOW"
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.RECEIVE_BOOT_COMPLETED",
+          "protection_level": "normal",
+          "threat": "Launches background broadcast receivers at device boot."
+        },
+        {
+          "name": "android.permission.FOREGROUND_SERVICE",
+          "protection_level": "normal",
+          "threat": "Runs indefinite background services displaying persistent notifications."
+        },
+        {
+          "name": "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+          "protection_level": "normal",
+          "threat": "Android 14+ special use foreground service flag."
+        },
+        {
+          "name": "android.permission.WAKE_LOCK",
+          "protection_level": "normal",
+          "threat": "Prevents CPU from entering deep sleep states."
+        },
+        {
+          "name": "android.permission.SCHEDULE_EXACT_ALARM",
+          "protection_level": "normal",
+          "threat": "Schedules precise timing triggers that wake up the system."
+        },
+        {
+          "name": "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+          "protection_level": "normal",
+          "threat": "Prompts to whitelist app against Android Doze and App Standby battery savings."
+        },
+        {
+          "name": "android.permission.USE_FULL_SCREEN_INTENT",
+          "protection_level": "normal",
+          "threat": "Presents full screen alerts over locked screens."
+        }
+      ],
+      "related_combinations": [
+        "RULE_COMBO_SPYWARE",
+        "RULE_COMBO_AUDIO_SURVEILLANCE",
+        "RULE_COMBO_MALICIOUS_DROPPER",
+        "RULE_COMBO_RANSOMWARE_PATTERN"
+      ],
+      "remediation": "Set App Battery Usage to 'Optimized' or 'Restricted' in Android Settings > Apps > Battery."
+    },
+    {
+      "category_id": "NETWORK",
+      "category_number": 9,
+      "display_name": "Network",
+      "base_weight_multiplier": 1.0,
+      "priority_rank": 9,
+      "mandate_compliance": "BASELINE_WEIGHT",
+      "description": "Outbound and inbound network socket communication, Wi-Fi configuration management, and network interface state inspection.",
+      "threat_profile": {
+        "primary_threats": [
+          "Exfiltration gateway transmitting harvested personal data to remote command servers",
+          "Command & Control (C2) channel for dynamic code or malware config delivery",
+          "Local Area Network (LAN) port scanning and device discovery"
+        ],
+        "owasp_mobile_reference": [
+          "M3: Insecure Communication"
+        ],
+        "mitre_attack_mobile": [
+          "T1437: Application Layer Protocol",
+          "T1438: Discovery"
+        ]
+      },
+      "scoring_rules": {
+        "pts_per_granted_perm": 2,
+        "max_category_cap": 4,
+        "pts_declared_only": 1,
+        "max_declared_cap": 3,
+        "rule_id": "RULE_PERM_CAT_NETWORK",
+        "severity": "INFO",
+        "isolation_policy": "Network permissions alone represent standard utility and carry minimal weight; their primary risk is acting as an enabler in compound combination rules."
+      },
+      "monitored_permissions": [
+        {
+          "name": "android.permission.INTERNET",
+          "protection_level": "normal",
+          "threat": "Opens outbound network sockets to external hosts across cellular or Wi-Fi."
+        },
+        {
+          "name": "android.permission.ACCESS_NETWORK_STATE",
+          "protection_level": "normal",
+          "threat": "Monitors network connection status (cellular vs Wi-Fi, roaming state)."
+        },
+        {
+          "name": "android.permission.ACCESS_WIFI_STATE",
+          "protection_level": "normal",
+          "threat": "Reads Wi-Fi SSID and connection parameters."
+        },
+        {
+          "name": "android.permission.CHANGE_WIFI_STATE",
+          "protection_level": "normal",
+          "threat": "Enables/disables Wi-Fi or initiates Wi-Fi connection switching."
+        },
+        {
+          "name": "android.permission.CHANGE_NETWORK_STATE",
+          "protection_level": "normal",
+          "threat": "Modifies network routing configuration."
+        }
+      ],
+      "related_combinations": [
+        "RULE_COMBO_SPYWARE",
+        "RULE_COMBO_TOLL_FRAUD",
+        "RULE_COMBO_AUDIO_SURVEILLANCE",
+        "RULE_COMBO_MALICIOUS_DROPPER"
+      ],
+      "remediation": "Standard permission for connected apps. If offline functionality is expected, disconnect network access or use local firewall tools."
+    }
+  ],
+  "compound_combination_rules": [
+    {
+      "rule_id": "RULE_COMBO_SPYWARE",
+      "title": "Potential Spyware Data-Exfiltration Pattern",
+      "points": 20,
+      "severity": "HIGH",
+      "category": "SPECIAL_ACCESS",
+      "confidence": "HIGH",
+      "logic_condition": "(Background Persistence: RECEIVE_BOOT_COMPLETED or FOREGROUND_SERVICE) AND (Sensitive Data: SMS or CONTACTS or CALL_LOG or LOCATION) AND (INTERNET declared or granted)",
+      "threat_impact": "The app can start automatically at device boot or run persistent background services while accessing personal private records and transmitting data across the internet without active user awareness.",
+      "evidence_template": "Background Persistence (Boot/Foreground) + Sensitive Data ({harvested}) + Internet Access",
+      "recommendation": "Review whether this app legitimately requires continuous background access to sensitive personal data and revoke unnecessary permissions in system settings."
+    },
+    {
+      "rule_id": "RULE_COMBO_TOLL_FRAUD",
+      "title": "Potential Toll Fraud / SMS Hijacking Pattern",
+      "points": 18,
+      "severity": "HIGH",
+      "category": "SMS",
+      "confidence": "HIGH",
+      "logic_condition": "(Granted: SEND_SMS) AND (INTERNET declared or granted)",
+      "threat_impact": "The app has active permission to transmit SMS messages alongside network access, enabling silent premium-rate messaging or authentication interception coordinated by a remote server.",
+      "evidence_template": "Granted SEND_SMS permission + Network communication capability",
+      "recommendation": "Verify if this application is your default SMS client. If not, immediately revoke SMS permissions in Android Settings."
+    },
+    {
+      "rule_id": "RULE_COMBO_AUDIO_SURVEILLANCE",
+      "title": "Continuous Audio Surveillance Risk",
+      "points": 16,
+      "severity": "HIGH",
+      "category": "CAMERA_AND_MIC",
+      "confidence": "HIGH",
+      "logic_condition": "(Granted: RECORD_AUDIO) AND (Background Persistence: Boot or Foreground Service) AND (INTERNET declared or granted)",
+      "threat_impact": "The application holds active microphone recording privileges while retaining persistent background execution and outbound internet connectivity, allowing covert ambient eavesdropping.",
+      "evidence_template": "Granted RECORD_AUDIO + Background Persistence + Network communication",
+      "recommendation": "Restrict microphone permission to 'While using the app' or revoke it entirely if background recording is not expected."
+    },
+    {
+      "rule_id": "RULE_COMBO_OVERLAY_STEALER",
+      "title": "Phishing / Overlay Tapjacking Threat",
+      "points": 22,
+      "severity": "CRITICAL",
+      "category": "SPECIAL_ACCESS",
+      "confidence": "HIGH",
+      "logic_condition": "(Enabled: SYSTEM_ALERT_WINDOW) AND (Enabled: ACCESSIBILITY_SERVICE or NOTIFICATION_LISTENER or Granted: SMS or CONTACTS_AND_CALLS)",
+      "threat_impact": "The app can draw arbitrary floating windows over other apps while intercepting user inputs, 2FA notification codes, or private records, enabling undetectable credential theft.",
+      "evidence_template": "Active Display Overlay + High Privilege Interception ({intercepted})",
+      "recommendation": "Disable 'Display over other apps' and Accessibility access for this application unless strictly required by a trusted tool."
+    },
+    {
+      "rule_id": "RULE_COMBO_MALICIOUS_DROPPER",
+      "title": "Potential Application Dropper Vector",
+      "points": 20,
+      "severity": "HIGH",
+      "category": "SPECIAL_ACCESS",
+      "confidence": "HIGH",
+      "logic_condition": "(Enabled: REQUEST_INSTALL_PACKAGES) AND (INTERNET declared or granted) AND (Storage Access OR Background Persistence)",
+      "threat_impact": "The app has permission to request external APK installations, retrieve payload files from remote servers, and store them locally, forming a complete secondary malware dropper pipeline.",
+      "evidence_template": "Package Installation Capability + Internet Download + Storage/Persistence",
+      "recommendation": "Revoke 'Install unknown apps' permission for this application in Special App Access settings."
+    },
+    {
+      "rule_id": "RULE_COMBO_RANSOMWARE_PATTERN",
+      "title": "Ransomware-Like Locking & Mass Storage Access",
+      "points": 25,
+      "severity": "CRITICAL",
+      "category": "SPECIAL_ACCESS",
+      "confidence": "HIGH",
+      "logic_condition": "(Granted: MANAGE_EXTERNAL_STORAGE) AND (Active: DEVICE_ADMIN or SYSTEM_ALERT_WINDOW) AND (Background Persistence granted)",
+      "threat_impact": "The application possesses broad un-sandboxed filesystem write permissions paired with lock-screen or administrative controls, presenting a severe integrity and extortion risk.",
+      "evidence_template": "All-Files Management Access + Device Admin/Overlay Lock capability + Background Auto-start",
+      "recommendation": "Disable Device Administrator rights immediately and consider uninstalling this application."
+    },
+    {
+      "rule_id": "RULE_HEURISTIC_SIDELOADED_HIGH_RISK",
+      "title": "Sideloaded Origin with Elevated Capabilities",
+      "points": 15,
+      "severity": "MEDIUM",
+      "category": "SPECIAL_ACCESS",
+      "confidence": "MEDIUM",
+      "logic_condition": "(isSideloaded == true) AND (Count of sensitive capabilities >= 2 across SMS, Contacts, Location, Camera/Mic, Overlay, Accessibility, Install Packages)",
+      "threat_impact": "This app was installed from outside the official Google Play Store and possesses multiple high-privilege access permissions, bypassing Play Protect verification.",
+      "evidence_template": "Sideloaded APK (Installer: {installer}) holding {sensitiveCount} sensitive capabilities",
+      "recommendation": "Verify that the APK was obtained from a verified and reputable source."
+    },
+    {
+      "rule_id": "RULE_HEURISTIC_OUTDATED_TARGET_SDK",
+      "title": "Legacy Target SDK (Permission Sandbox Bypass)",
+      "points": 10,
+      "severity": "MEDIUM",
+      "category": "SPECIAL_ACCESS",
+      "confidence": "HIGH",
+      "logic_condition": "targetSdk > 0 AND targetSdk < 29 (Android 9 Pie or older)",
+      "threat_impact": "Apps targeting legacy Android versions can bypass modern scoped storage and granular runtime permission prompt dialogs.",
+      "evidence_template": "Target SDK is {targetSdk} (Android 9 Pie or older)",
+      "recommendation": "Check for updated versions of this application in the app store that support modern Android security standards."
+    }
+  ],
+  "category_mapping_logic": {
+    "precedence_order": [
+      "1. Special Access Platform Capabilities",
+      "2. SMS & Messaging",
+      "3. Contacts & Call Logs",
+      "4. Camera & Microphone",
+      "5. Location",
+      "6. Phone & Identity",
+      "7. Storage & Media",
+      "8. Background & Persistence",
+      "9. Network",
+      "10. Keyword-based Heuristic Fallback"
+    ],
+    "keyword_patterns": {
+      "SPECIAL_ACCESS": [
+        "BIND_ACCESSIBILITY_SERVICE",
+        "BIND_DEVICE_ADMIN",
+        "BIND_NOTIFICATION_LISTENER_SERVICE",
+        "SYSTEM_ALERT_WINDOW",
+        "REQUEST_INSTALL_PACKAGES",
+        "PACKAGE_USAGE_STATS"
+      ],
+      "SMS": [
+        "SMS",
+        "MMS",
+        "WAP_PUSH"
+      ],
+      "CONTACTS_AND_CALLS": [
+        "CONTACTS",
+        "CALL_LOG",
+        "GET_ACCOUNTS",
+        "PROCESS_OUTGOING_CALLS"
+      ],
+      "CAMERA_AND_MIC": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "CAPTURE_AUDIO_OUTPUT",
+        "CAPTURE_VIDEO_OUTPUT"
+      ],
+      "LOCATION": [
+        "LOCATION"
+      ],
+      "PHONE_AND_IDENTITY": [
+        "PHONE",
+        "CALL_PHONE",
+        "READ_PRIVILEGED_PHONE_STATE",
+        "USE_SIP",
+        "ADD_VOICEMAIL"
+      ],
+      "STORAGE_AND_MEDIA": [
+        "STORAGE",
+        "READ_MEDIA_",
+        "ACCESS_MEDIA_LOCATION",
+        "MANAGE_EXTERNAL_STORAGE"
+      ],
+      "BACKGROUND_AND_PERSISTENCE": [
+        "BOOT_COMPLETED",
+        "FOREGROUND_SERVICE",
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+        "WAKE_LOCK",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_FULL_SCREEN_INTENT"
+      ],
+      "NETWORK": [
+        "INTERNET",
+        "NETWORK_STATE",
+        "WIFI_STATE",
+        "CHANGE_WIFI_STATE",
+        "CHANGE_NETWORK_STATE"
+      ]
+    },
+    "fallback_heuristics": {
+      "AUDIO": "CAMERA_AND_MIC",
+      "FILE": "STORAGE_AND_MEDIA",
+      "CALL": "PHONE_AND_IDENTITY",
+      "DEFAULT": "NETWORK"
+    }
+  },
+  "deduplication_and_conflict_resolution": [
+    {
+      "id": "DEDUP_LOCATION_COARSE_FINE",
+      "target_category": "LOCATION",
+      "condition": "ACCESS_FINE_LOCATION is GRANTED and ACCESS_COARSE_LOCATION is present",
+      "action": "ACCESS_COARSE_LOCATION is dropped from category scoring; fine location represents the authoritative risk.",
+      "rationale": "Prevents artificial inflation of location category points since coarse location is a subset of fine location capability."
+    },
+    {
+      "id": "DEDUP_STORAGE_MANAGE_LEGACY",
+      "target_category": "STORAGE_AND_MEDIA",
+      "condition": "MANAGE_EXTERNAL_STORAGE is GRANTED and READ_EXTERNAL_STORAGE / WRITE_EXTERNAL_STORAGE are present",
+      "action": "All-files management is treated as the primary finding; legacy permissions are consolidated into evidence string without additive points.",
+      "rationale": "MANAGE_EXTERNAL_STORAGE subsumes all scoped and legacy storage access."
+    },
+    {
+      "id": "DEDUP_DECLARED_VS_GRANTED",
+      "target_category": "ALL_CATEGORIES",
+      "condition": "A permission in a category is GRANTED",
+      "action": "Declared-only points (1 pt/perm, max 3) are completely suppressed for that category if any permission in that category is granted.",
+      "rationale": "Runtime grant points take full precedence and already encapsulate category risk."
+    },
+    {
+      "id": "DEDUP_SPECIAL_ACCESS_VS_RUNTIME",
+      "target_category": "SPECIAL_ACCESS",
+      "condition": "Special Access capability is enabled/active",
+      "action": "Special Access audit overrides standard permission audit; points are applied via SpecialAccessAudit rather than duplicate PermissionAudit entries.",
+      "rationale": "Prevents dual scoring between AppOps/Settings checks and PackageInfo permission flags."
+    }
+  ],
+  "verification_and_testing_matrix": [
+    {
+      "test_case_id": "TC_SCORE_THREE_REASON_CAPPING",
+      "description": "App has raw score >= 50 (e.g. Device Admin Active = 30 + Ransomware Combo = 25 -> raw 55) but only 2 distinct rule IDs.",
+      "expected_behavior": "Score is capped at 49, band forced to MEDIUM, explanation logged.",
+      "verified_in": "RiskScoringEngineTest.kt"
+    },
+    {
+      "test_case_id": "TC_SPECIAL_ACCESS_MAX_WEIGHT",
+      "description": "App has Device Admin active (30 pts) vs App has SMS granted (8 pts).",
+      "expected_behavior": "Device Admin receives substantially higher weight multiplier (2.0 vs 1.5) and point allocation.",
+      "verified_in": "RiskScoringEngineTest.kt"
+    },
+    {
+      "test_case_id": "TC_COMBINATION_SPYWARE",
+      "description": "App has RECEIVE_BOOT_COMPLETED, READ_SMS, and INTERNET.",
+      "expected_behavior": "Triggers RULE_COMBO_SPYWARE (+20 pts) in addition to individual category grants.",
+      "verified_in": "CombinationRulesTest.kt"
+    },
+    {
+      "test_case_id": "TC_LOCATION_DEDUPLICATION",
+      "description": "App has both ACCESS_FINE_LOCATION and ACCESS_COARSE_LOCATION granted.",
+      "expected_behavior": "Only 6 points awarded for Location category, not 12 points.",
+      "verified_in": "RiskScoringEngineTest.kt"
+    }
+  ]
+}
