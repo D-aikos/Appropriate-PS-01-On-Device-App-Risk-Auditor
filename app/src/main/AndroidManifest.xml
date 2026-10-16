@@ -12,6 +12,12 @@
         tools:ignore="QueryAllPackagesPermission" />
 
     <!--
+      REQUEST_DELETE_PACKAGES enables standard system-mediated uninstall prompts
+      (Intent.ACTION_DELETE) as required by PS-01 and AGENTS.md rules.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
+    <!--
       Notice: NO android.permission.INTERNET is requested.
       The application operates 100% offline on-device.
     -->

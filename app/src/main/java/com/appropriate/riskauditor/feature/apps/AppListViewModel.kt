@@ -106,10 +106,9 @@ class AppListViewModel(
         includeSystemApps,
         _searchQuery,
         _selectedBands,
-        _selectedCategory,
-        _selectedSort
-    ) { state, includeSystem, query, bands, category, sort ->
-        if (state !is ScanState.Success) return@combine emptyList()
+        _selectedCategory
+    ) { state, includeSystem, query, bands, category ->
+        if (state !is ScanState.Success) return@combine emptyList<AppRiskReport>()
 
         var list = state.summary.appReports
 
@@ -143,6 +142,8 @@ class AppListViewModel(
             }
         }
 
+        list
+    }.combine(_selectedSort) { list, sort ->
         // 5. Sorting
         when (sort) {
             AppSortOrder.RISK_DESC -> list.sortedByDescending { it.riskScore }

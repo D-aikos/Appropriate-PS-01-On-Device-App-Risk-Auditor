@@ -380,10 +380,10 @@ fun AppDetailScreen(
                     subtitle = "System-level capabilities carrying elevated privilege weight"
                 ) {
                     val specialTypes = listOf(
-                        SpecialAccessType.ACCESSIBILITY,
+                        SpecialAccessType.ACCESSIBILITY_SERVICE,
                         SpecialAccessType.DEVICE_ADMIN,
                         SpecialAccessType.NOTIFICATION_LISTENER,
-                        SpecialAccessType.SYSTEM_OVERLAY,
+                        SpecialAccessType.SYSTEM_ALERT_WINDOW,
                         SpecialAccessType.REQUEST_INSTALL_PACKAGES,
                         SpecialAccessType.USAGE_STATS
                     )

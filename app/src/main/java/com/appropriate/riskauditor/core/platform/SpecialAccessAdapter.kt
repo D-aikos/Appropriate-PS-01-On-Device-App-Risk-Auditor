@@ -228,7 +228,11 @@ class SpecialAccessAdapter(private val context: Context) {
                 @Suppress("DEPRECATION")
                 appOpsManager.checkOpNoThrow(opStr, uid, packageName)
             }
-            mode == AppOpsManager.MODE_ALLOWED
+            when (mode) {
+                AppOpsManager.MODE_ALLOWED -> true
+                AppOpsManager.MODE_IGNORED, AppOpsManager.MODE_ERRORED -> false
+                else -> null // MODE_DEFAULT or unhandled => UNKNOWN (Unknown is not safe)
+            }
         } catch (e: Exception) {
             null
         }
