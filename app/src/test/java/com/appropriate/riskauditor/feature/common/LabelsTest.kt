@@ -4,6 +4,7 @@ import com.appropriate.riskauditor.core.model.GrantState
 import com.appropriate.riskauditor.core.model.RiskCategory
 import com.appropriate.riskauditor.core.model.RiskLevel
 import com.appropriate.riskauditor.core.model.SpecialAccessState
+import com.appropriate.riskauditor.core.model.SpecialAccessType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,6 +35,16 @@ class LabelsTest {
         assertEquals("Not requested", SpecialAccessState.NOT_DECLARED.displayName())
         assertEquals("Couldn't check", SpecialAccessState.UNKNOWN.displayName())
         assertEquals("Not supported", SpecialAccessState.NOT_SUPPORTED.displayName())
+    }
+
+    @Test
+    fun testSpecialAccessTypeDisplayNames() {
+        assertEquals("Accessibility service", SpecialAccessType.ACCESSIBILITY_SERVICE.displayName())
+        assertEquals("Device administrator", SpecialAccessType.DEVICE_ADMIN.displayName())
+        assertEquals("Notification listener", SpecialAccessType.NOTIFICATION_LISTENER.displayName())
+        assertEquals("Display over other apps", SpecialAccessType.SYSTEM_ALERT_WINDOW.displayName())
+        assertEquals("Install unknown apps", SpecialAccessType.REQUEST_INSTALL_PACKAGES.displayName())
+        assertEquals("Usage access", SpecialAccessType.USAGE_STATS.displayName())
     }
 
     @Test

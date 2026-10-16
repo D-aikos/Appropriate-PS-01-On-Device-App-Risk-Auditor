@@ -50,10 +50,10 @@ fun SpecialAccessState.displayName(): String = when (this) {
 }
 
 fun SpecialAccessType.displayName(): String = when (this) {
-    SpecialAccessType.ACCESSIBILITY -> "Accessibility service"
+    SpecialAccessType.ACCESSIBILITY_SERVICE -> "Accessibility service"
     SpecialAccessType.DEVICE_ADMIN -> "Device administrator"
     SpecialAccessType.NOTIFICATION_LISTENER -> "Notification listener"
-    SpecialAccessType.SYSTEM_OVERLAY -> "Display over other apps"
+    SpecialAccessType.SYSTEM_ALERT_WINDOW -> "Display over other apps"
     SpecialAccessType.REQUEST_INSTALL_PACKAGES -> "Install unknown apps"
     SpecialAccessType.USAGE_STATS -> "Usage access"
 }

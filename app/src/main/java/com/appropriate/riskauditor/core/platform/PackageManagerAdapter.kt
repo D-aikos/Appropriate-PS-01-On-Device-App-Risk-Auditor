@@ -38,7 +38,8 @@ class PackageManagerAdapter(private val context: Context) {
         }
 
         return allPackages.filter { pkgInfo ->
-            val isSystem = (pkgInfo.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
+            val flags = pkgInfo.applicationInfo?.flags ?: 0
+            val isSystem = (flags and ApplicationInfo.FLAG_SYSTEM) != 0 && (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
             if (includeSystemApps) true else !isSystem
         }
     }
@@ -49,7 +50,8 @@ class PackageManagerAdapter(private val context: Context) {
     fun extractInventory(packageInfo: PackageInfo): AppInventoryRecord {
         val appInfo = packageInfo.applicationInfo
         val appLabel = appInfo?.loadLabel(packageManager)?.toString() ?: packageInfo.packageName
-        val isSystem = (appInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
+        val flags = appInfo?.flags ?: 0
+        val isSystem = (flags and ApplicationInfo.FLAG_SYSTEM) != 0 && (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
         val targetSdk = appInfo?.targetSdkVersion
         val versionCode = PackageInfoCompat.getLongVersionCode(packageInfo)
         val versionName = packageInfo.versionName
@@ -70,6 +72,8 @@ class PackageManagerAdapter(private val context: Context) {
             lastUpdateTimeEpochMillis = lastUpdateTime
         )
     }
+
+    private val permissionProtectionCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /**
      * Resolves manifest-declared permissions and their current runtime grant status.
@@ -99,18 +103,44 @@ class PackageManagerAdapter(private val context: Context) {
                 else -> GrantState.NOT_RUNTIME
             }
 
+            val protectionLevel = resolveProtectionLevel(permName)
+
             audits.add(
                 PermissionAudit(
                     name = permName,
                     isDeclared = isDeclared,
                     grantState = grantState,
                     category = category,
-                    protectionLevel = null
+                    protectionLevel = protectionLevel
                 )
             )
         }
 
         return audits
+    }
+
+    private fun resolveProtectionLevel(permissionName: String): String {
+        return permissionProtectionCache.computeIfAbsent(permissionName) { name ->
+            try {
+                val permInfo = packageManager.getPermissionInfo(name, 0)
+                val base = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    permInfo.protection
+                } else {
+                    @Suppress("DEPRECATION")
+                    permInfo.protectionLevel and android.content.pm.PermissionInfo.PROTECTION_MASK_BASE
+                }
+                when (base) {
+                    android.content.pm.PermissionInfo.PROTECTION_NORMAL -> "NORMAL"
+                    android.content.pm.PermissionInfo.PROTECTION_DANGEROUS -> "DANGEROUS"
+                    android.content.pm.PermissionInfo.PROTECTION_SIGNATURE -> "SIGNATURE"
+                    else -> "OTHER"
+                }
+            } catch (e: PackageManager.NameNotFoundException) {
+                "UNKNOWN"
+            } catch (e: Exception) {
+                "UNKNOWN"
+            }
+        }
     }
 
     private fun queryInstallerPackage(packageName: String): String? {

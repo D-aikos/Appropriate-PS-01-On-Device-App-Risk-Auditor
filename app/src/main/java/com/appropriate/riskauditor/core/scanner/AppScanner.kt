@@ -57,20 +57,25 @@ class AppScanner(
 
         for (i in packages.indices) {
             val pkg = packages[i]
-            val inventory = packageManagerAdapter.extractInventory(pkg)
+            try {
+                val inventory = packageManagerAdapter.extractInventory(pkg)
 
-            emit(ScanProgress.Progress(i + 1, total, inventory.appLabel))
+                emit(ScanProgress.Progress(i + 1, total, inventory.appLabel))
 
-            val permissions = packageManagerAdapter.extractPermissions(pkg)
-            val specialAccess = specialAccessAdapter.auditSpecialAccess(pkg)
+                val permissions = packageManagerAdapter.extractPermissions(pkg)
+                val specialAccess = specialAccessAdapter.auditSpecialAccess(pkg)
 
-            val report = RiskScoringEngine.evaluate(
-                inventory = inventory,
-                permissions = permissions,
-                specialAccess = specialAccess,
-                scannedAtEpochMillis = scanTimestamp
-            )
-            reports.add(report)
+                val report = RiskScoringEngine.evaluate(
+                    inventory = inventory,
+                    permissions = permissions,
+                    specialAccess = specialAccess,
+                    scannedAtEpochMillis = scanTimestamp
+                )
+                reports.add(report)
+            } catch (e: Exception) {
+                // AGENTS.md rule: Never crash a scan because one app fails; continue scanning.
+                continue
+            }
         }
 
         // Sort reports by risk score descending (highest risk first)
