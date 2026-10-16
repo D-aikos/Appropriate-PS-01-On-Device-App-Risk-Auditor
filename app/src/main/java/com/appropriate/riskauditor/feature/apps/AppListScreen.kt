@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.sp
 import com.appropriate.riskauditor.app.theme.*
 import com.appropriate.riskauditor.core.model.AppRiskReport
 import com.appropriate.riskauditor.core.model.RiskLevel
-import com.appropriate.riskauditor.core.scanner.ScanState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,7 +34,8 @@ fun AppListScreen(
     val selectedFilter by viewModel.selectedFilter.collectAsState()
     val selectedSort by viewModel.selectedSort.collectAsState()
     val apps by viewModel.filteredApps.collectAsState()
-    val scanState by viewModel.scanState.collectAsState()
+    val counts by viewModel.filterCounts.collectAsState()
+    val includeSystemApps by viewModel.includeSystemApps.collectAsState()
 
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -43,11 +43,18 @@ fun AppListScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Audited Applications",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text(
+                            text = "Audited Applications",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${counts.all} total apps audited",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextMuted
+                        )
+                    }
                 },
                 actions = {
                     IconButton(onClick = { showSortMenu = true }) {
@@ -92,7 +99,7 @@ fun AppListScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.updateSearchQuery(it) },
-                placeholder = { Text("Search by name or package...", color = TextMuted) },
+                placeholder = { Text("Search by app name or package…", color = TextMuted) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
@@ -116,41 +123,88 @@ fun AppListScreen(
                     .padding(horizontal = 16.dp, vertical = 6.dp)
             )
 
-            // Filter Chips Row
+            // Filter Chips Row with Live Count Badges
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(RiskFilter.values()) { filter ->
-                    val isSelected = filter == selectedFilter
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { viewModel.selectFilter(filter) },
-                        label = { Text(filter.displayName) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            containerColor = DarkSurface,
-                            labelColor = TextSecondary,
-                            selectedContainerColor = PrimaryBlue.copy(alpha = 0.2f),
-                            selectedLabelColor = PrimaryLightBlue
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = isSelected,
-                            borderColor = if (isSelected) PrimaryLightBlue else BorderStrokeColor
-                        )
+                item {
+                    FilterChipWithCount(
+                        title = "All",
+                        count = counts.all,
+                        isSelected = selectedFilter == RiskFilter.ALL,
+                        onClick = { viewModel.selectFilter(RiskFilter.ALL) }
+                    )
+                }
+                item {
+                    FilterChipWithCount(
+                        title = "Critical",
+                        count = counts.critical,
+                        isSelected = selectedFilter == RiskFilter.CRITICAL,
+                        badgeColor = RiskCriticalColor,
+                        onClick = { viewModel.selectFilter(RiskFilter.CRITICAL) }
+                    )
+                }
+                item {
+                    FilterChipWithCount(
+                        title = "High",
+                        count = counts.high,
+                        isSelected = selectedFilter == RiskFilter.HIGH,
+                        badgeColor = RiskHighColor,
+                        onClick = { viewModel.selectFilter(RiskFilter.HIGH) }
+                    )
+                }
+                item {
+                    FilterChipWithCount(
+                        title = "Medium",
+                        count = counts.medium,
+                        isSelected = selectedFilter == RiskFilter.MEDIUM,
+                        badgeColor = RiskMediumColor,
+                        onClick = { viewModel.selectFilter(RiskFilter.MEDIUM) }
+                    )
+                }
+                item {
+                    FilterChipWithCount(
+                        title = "Low",
+                        count = counts.low,
+                        isSelected = selectedFilter == RiskFilter.LOW,
+                        badgeColor = RiskLowColor,
+                        onClick = { viewModel.selectFilter(RiskFilter.LOW) }
+                    )
+                }
+                item {
+                    FilterChipWithCount(
+                        title = "Sideloaded",
+                        count = counts.sideloaded,
+                        isSelected = selectedFilter == RiskFilter.SIDELOADED,
+                        badgeColor = RiskHighColor,
+                        onClick = { viewModel.selectFilter(RiskFilter.SIDELOADED) }
                     )
                 }
             }
 
-            // Results Counter
-            Text(
-                text = "${apps.size} applications found",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextMuted,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-            )
+            // Results Counter & Quick Scope Indicator
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${apps.size} matching applications",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextMuted
+                )
+
+                Text(
+                    text = "Sorted by: ${selectedSort.displayName}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = PrimaryLightBlue
+                )
+            }
 
             // Apps Lazy List
             if (apps.isEmpty()) {
@@ -162,6 +216,8 @@ fun AppListScreen(
                         Icon(Icons.Default.SearchOff, contentDescription = null, tint = TextMuted, modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("No matching applications found", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Try selecting a different filter or clearing search.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
                     }
                 }
             } else {
@@ -182,6 +238,50 @@ fun AppListScreen(
             }
         }
     }
+}
+
+@Composable
+fun FilterChipWithCount(
+    title: String,
+    count: Int,
+    isSelected: Boolean,
+    badgeColor: androidx.compose.ui.graphics.Color? = null,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = isSelected,
+        onClick = onClick,
+        label = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title)
+                Spacer(modifier = Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(badgeColor?.copy(alpha = 0.2f) ?: DarkSurfaceVariant)
+                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = "$count",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor ?: TextSecondary
+                    )
+                }
+            }
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = DarkSurface,
+            labelColor = TextSecondary,
+            selectedContainerColor = PrimaryBlue.copy(alpha = 0.2f),
+            selectedLabelColor = PrimaryLightBlue
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = isSelected,
+            borderColor = if (isSelected) PrimaryLightBlue else BorderStrokeColor
+        )
+    )
 }
 
 @Composable
@@ -208,12 +308,13 @@ fun AppListItemRow(appReport: AppRiskReport, onClick: () -> Unit) {
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // App Avatar / Initial
+            // App Avatar / Initials
             Box(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(DarkSurfaceVariant),
+                    .background(DarkSurfaceVariant)
+                    .border(1.dp, BorderStrokeColor, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -245,7 +346,8 @@ fun AppListItemRow(appReport: AppRiskReport, onClick: () -> Unit) {
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(RiskHighColor.copy(alpha = 0.15f))
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .border(1.dp, RiskHighColor.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text("Sideloaded", fontSize = 9.sp, color = RiskHighColor, fontWeight = FontWeight.Bold)
                         }
@@ -257,7 +359,7 @@ fun AppListItemRow(appReport: AppRiskReport, onClick: () -> Unit) {
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(DarkSurfaceVariant)
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
                         ) {
                             Text("System", fontSize = 9.sp, color = TextMuted, fontWeight = FontWeight.Bold)
                         }
@@ -273,14 +375,21 @@ fun AppListItemRow(appReport: AppRiskReport, onClick: () -> Unit) {
                     overflow = TextOverflow.Ellipsis
                 )
 
-                if (appReport.findings.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+                val topFinding = appReport.findings.firstOrNull()
+                if (topFinding != null) {
                     Text(
-                        text = "• ${appReport.findings.first().title}",
+                        text = "• ${topFinding.title}",
                         style = MaterialTheme.typography.labelSmall,
                         color = PrimaryLightBlue,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    Text(
+                        text = "${appReport.grantedPermissionCount} granted • Target SDK ${appReport.inventory.targetSdk ?: "N/A"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted
                     )
                 }
             }
@@ -292,7 +401,7 @@ fun AppListItemRow(appReport: AppRiskReport, onClick: () -> Unit) {
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(levelColor.copy(alpha = 0.15f))
-                    .border(1.dp, levelColor.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                    .border(1.dp, levelColor.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -307,6 +416,7 @@ fun AppListItemRow(appReport: AppRiskReport, onClick: () -> Unit) {
                         text = appReport.riskLevel.name.take(4),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
                         color = levelColor
                     )
                 }

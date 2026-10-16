@@ -1,7 +1,11 @@
 package com.appropriate.riskauditor.feature.apps
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,7 +44,7 @@ fun AppDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = "Application Audit Detail", fontWeight = FontWeight.Bold) },
+                title = { Text(text = "App Risk Assessment", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
@@ -60,7 +65,13 @@ fun AppDetailScreen(
                     .padding(paddingValues),
                 contentAlignment = Alignment.Center
             ) {
-                Text("App data not found. Please rescan.", color = TextSecondary)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = TextMuted, modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("App audit report not found in active cache.", color = TextSecondary)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("Please return to the Dashboard and perform a device scan.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                }
             }
             return@Scaffold
         }
@@ -102,14 +113,15 @@ fun AppDetailScreen(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(50.dp)
+                                        .size(52.dp)
                                         .clip(CircleShape)
-                                        .background(DarkSurfaceVariant),
+                                        .background(DarkSurfaceVariant)
+                                        .border(1.dp, BorderStrokeColor, CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = appReport.inventory.appLabel.take(1).uppercase(),
-                                        style = MaterialTheme.typography.titleLarge,
+                                        style = MaterialTheme.typography.headlineMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = PrimaryLightBlue
                                     )
@@ -165,7 +177,7 @@ fun AppDetailScreen(
                         val updatedStr = appReport.inventory.lastUpdateTimeEpochMillis?.let { dateFormat.format(Date(it)) } ?: "Unknown"
 
                         MetadataRow("Version", "${appReport.inventory.versionName ?: "N/A"} (Code ${appReport.inventory.versionCode ?: "N/A"})")
-                        MetadataRow("Target SDK", "${appReport.inventory.targetSdk ?: "Unknown"}")
+                        MetadataRow("Target SDK", "${appReport.inventory.targetSdk ?: "Unknown"} ${if ((appReport.inventory.targetSdk ?: 99) < 29) "[LEGACY - Bypasses Scoped Storage]" else ""}")
                         MetadataRow("Installer", appReport.inventory.installerPackage ?: "Sideloaded / Direct APK")
                         MetadataRow("First Installed", installedStr)
                         MetadataRow("Last Updated", updatedStr)
@@ -209,12 +221,29 @@ fun AppDetailScreen(
 
             // 3. Why Flagged Section (Findings & Evidence)
             item {
-                Text(
-                    text = "Why Flagged (${appReport.findings.size} Evidence Findings)",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Why Flagged (${appReport.findings.size} Evidence Reasons)",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+
+                    if (appReport.riskLevel == RiskLevel.HIGH || appReport.riskLevel == RiskLevel.CRITICAL) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(DarkSurfaceVariant)
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                        ) {
+                            Text("3-Reason Rule Enforced", fontSize = 10.sp, color = AccentGreen, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
 
             if (appReport.findings.isEmpty()) {
@@ -227,7 +256,7 @@ fun AppDetailScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text(
-                            text = "No risk findings detected for this application.",
+                            text = "No risk findings or suspicious combinations detected for this application.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
                             modifier = Modifier.padding(16.dp)
@@ -242,12 +271,19 @@ fun AppDetailScreen(
 
             // 4. Special Access Checks Section
             item {
-                Text(
-                    text = "Special Access Capabilities",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
+                Column {
+                    Text(
+                        text = "Special Access Capabilities",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Special access permissions represent the highest security leverage.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted
+                    )
+                }
             }
 
             items(appReport.specialAccess) { access ->
@@ -256,12 +292,19 @@ fun AppDetailScreen(
 
             // 5. Permissions Matrix Grouped by Category
             item {
-                Text(
-                    text = "Permissions Matrix (${appReport.permissions.size} Total)",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
+                Column {
+                    Text(
+                        text = "Permissions Matrix (${appReport.permissions.size} Total)",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Text(
+                        text = "Categorized across the 9 required problem statement categories.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted
+                    )
+                }
             }
 
             for ((category, perms) in appReport.permissionsByCategory) {
@@ -306,6 +349,7 @@ fun FindingCard(finding: RiskFinding) {
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
+            // Header with Rule ID and Points Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -314,7 +358,7 @@ fun FindingCard(finding: RiskFinding) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(10.dp)
                             .clip(CircleShape)
                             .background(sevColor)
                     )
@@ -330,7 +374,8 @@ fun FindingCard(finding: RiskFinding) {
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
                         .background(sevColor.copy(alpha = 0.15f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .border(1.dp, sevColor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
                         text = "+${finding.points} pts",
@@ -338,6 +383,27 @@ fun FindingCard(finding: RiskFinding) {
                         fontWeight = FontWeight.Bold,
                         color = sevColor
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(DarkSurfaceVariant)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(finding.ruleId, fontSize = 9.sp, color = TextMuted, fontWeight = FontWeight.SemiBold)
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(DarkSurfaceVariant)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("${finding.confidence.name} CONFIDENCE", fontSize = 9.sp, color = PrimaryLightBlue, fontWeight = FontWeight.SemiBold)
                 }
             }
 
@@ -356,20 +422,29 @@ fun FindingCard(finding: RiskFinding) {
                 color = TextSecondary
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = AccentGreen,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = finding.recommendation,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AccentGreen
-                )
+            Spacer(modifier = Modifier.height(10.dp))
+            // Recommendation Callout Box
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(AccentGreen.copy(alpha = 0.08f))
+                    .border(1.dp, AccentGreen.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = AccentGreen,
+                        modifier = Modifier.size(16.dp).padding(top = 1.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(text = "Actionable Recommendation", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentGreen)
+                        Text(text = finding.recommendation, style = MaterialTheme.typography.bodySmall, color = TextPrimary)
+                    }
+                }
             }
         }
     }
@@ -378,11 +453,20 @@ fun FindingCard(finding: RiskFinding) {
 @Composable
 fun SpecialAccessCard(access: SpecialAccessAudit) {
     val (statusText, statusColor) = when (access.state) {
-        SpecialAccessState.ENABLED -> Pair("ENABLED", RiskCriticalColor)
-        SpecialAccessState.DISABLED -> Pair("DECLARED (DISABLED)", RiskMediumColor)
+        SpecialAccessState.ENABLED -> Pair("ENABLED / ACTIVE", RiskCriticalColor)
+        SpecialAccessState.DISABLED -> Pair("DECLARED (INACTIVE)", RiskMediumColor)
         SpecialAccessState.NOT_DECLARED -> Pair("NOT DECLARED", TextMuted)
-        SpecialAccessState.UNKNOWN -> Pair("UNKNOWN", RiskHighColor)
+        SpecialAccessState.UNKNOWN -> Pair("UNKNOWN STATE", RiskHighColor)
         SpecialAccessState.NOT_SUPPORTED -> Pair("NOT SUPPORTED", TextMuted)
+    }
+
+    val icon: ImageVector = when (access.type) {
+        SpecialAccessType.ACCESSIBILITY_SERVICE -> Icons.Default.Accessibility
+        SpecialAccessType.DEVICE_ADMIN -> Icons.Default.AdminPanelSettings
+        SpecialAccessType.NOTIFICATION_LISTENER -> Icons.Default.NotificationsActive
+        SpecialAccessType.SYSTEM_ALERT_WINDOW -> Icons.Default.Layers
+        SpecialAccessType.REQUEST_INSTALL_PACKAGES -> Icons.Default.Download
+        SpecialAccessType.USAGE_STATS -> Icons.Default.QueryStats
     }
 
     Card(
@@ -399,18 +483,31 @@ fun SpecialAccessCard(access: SpecialAccessAudit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = access.type.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TextPrimary
-                )
-                if (access.detail != null) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(statusColor.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(imageVector = icon, contentDescription = null, tint = statusColor, modifier = Modifier.size(18.dp))
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
                     Text(
-                        text = access.detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
+                        text = access.type.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary
                     )
+                    if (access.detail != null) {
+                        Text(
+                            text = access.detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary
+                        )
+                    }
                 }
             }
 
@@ -418,7 +515,7 @@ fun SpecialAccessCard(access: SpecialAccessAudit) {
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .background(statusColor.copy(alpha = 0.15f))
-                    .border(1.dp, statusColor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                    .border(1.dp, statusColor.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
@@ -436,6 +533,21 @@ fun SpecialAccessCard(access: SpecialAccessAudit) {
 fun CategoryPermissionsCard(category: RiskCategory, permissions: List<PermissionAudit>) {
     var expanded by remember { mutableStateOf(false) }
 
+    val grantedCount = permissions.count { it.grantState == GrantState.GRANTED }
+    val declaredCount = permissions.count { it.isDeclared }
+
+    val categoryIcon: ImageVector = when (category) {
+        RiskCategory.SPECIAL_ACCESS -> Icons.Default.VpnKey
+        RiskCategory.SMS -> Icons.Default.Message
+        RiskCategory.CONTACTS_AND_CALLS -> Icons.Default.Contacts
+        RiskCategory.CAMERA_AND_MIC -> Icons.Default.Videocam
+        RiskCategory.LOCATION -> Icons.Default.LocationOn
+        RiskCategory.PHONE_AND_IDENTITY -> Icons.Default.Phone
+        RiskCategory.STORAGE_AND_MEDIA -> Icons.Default.Folder
+        RiskCategory.BACKGROUND_AND_PERSISTENCE -> Icons.Default.Schedule
+        RiskCategory.NETWORK -> Icons.Default.Wifi
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -445,57 +557,83 @@ fun CategoryPermissionsCard(category: RiskCategory, permissions: List<Permission
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "${category.displayName} (${permissions.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
-                )
-                TextButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "Hide" else "Show Details", color = PrimaryLightBlue)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = categoryIcon, contentDescription = null, tint = PrimaryLightBlue, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = category.displayName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "$grantedCount granted • $declaredCount declared",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (grantedCount > 0) AccentGreen else TextMuted
+                        )
+                    }
+                }
+
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        tint = TextSecondary
+                    )
                 }
             }
 
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                for (perm in permissions) {
-                    val (grantText, grantColor) = when (perm.grantState) {
-                        GrantState.GRANTED -> Pair("GRANTED", AccentGreen)
-                        GrantState.DENIED -> Pair("DENIED", RiskHighColor)
-                        GrantState.NOT_RUNTIME -> Pair("NORMAL", TextMuted)
-                        GrantState.UNKNOWN -> Pair("UNKNOWN", RiskMediumColor)
-                        GrantState.NOT_SUPPORTED -> Pair("NOT SUPPORTED", TextMuted)
-                    }
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    HorizontalDivider(color = BorderStrokeColor, thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    for (perm in permissions) {
+                        val (grantText, grantColor) = when (perm.grantState) {
+                            GrantState.GRANTED -> Pair("GRANTED", AccentGreen)
+                            GrantState.DENIED -> Pair("DENIED", RiskHighColor)
+                            GrantState.NOT_RUNTIME -> Pair("NORMAL", TextMuted)
+                            GrantState.UNKNOWN -> Pair("UNKNOWN", RiskMediumColor)
+                            GrantState.NOT_SUPPORTED -> Pair("NOT SUPPORTED", TextMuted)
+                        }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = perm.simpleName,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextPrimary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Box(
+                        Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(grantColor.copy(alpha = 0.15f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = grantText,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = grantColor
+                                text = perm.simpleName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextPrimary,
+                                modifier = Modifier.weight(1f)
                             )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(grantColor.copy(alpha = 0.15f))
+                                    .border(1.dp, grantColor.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = grantText,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = grantColor
+                                )
+                            }
                         }
                     }
                 }

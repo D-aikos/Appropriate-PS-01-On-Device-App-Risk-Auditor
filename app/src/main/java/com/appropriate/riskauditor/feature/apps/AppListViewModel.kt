@@ -23,6 +23,15 @@ enum class SortOrder(val displayName: String) {
     INSTALL_TIME_DESC("Recently Updated")
 }
 
+data class FilterCounts(
+    val all: Int = 0,
+    val critical: Int = 0,
+    val high: Int = 0,
+    val medium: Int = 0,
+    val low: Int = 0,
+    val sideloaded: Int = 0
+)
+
 class AppListViewModel(
     private val app: RiskAuditorApp = RiskAuditorApp.instance
 ) : ViewModel() {
@@ -38,6 +47,21 @@ class AppListViewModel(
 
     val scanState: StateFlow<ScanState> = app.scanManager.scanState
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ScanState.Idle)
+
+    val includeSystemApps: StateFlow<Boolean> = app.settingsManager.includeSystemApps
+
+    val filterCounts: StateFlow<FilterCounts> = scanState.map { state ->
+        if (state !is ScanState.Success) return@map FilterCounts()
+        val list = state.summary.appReports
+        FilterCounts(
+            all = list.size,
+            critical = list.count { it.riskLevel == RiskLevel.CRITICAL },
+            high = list.count { it.riskLevel == RiskLevel.HIGH },
+            medium = list.count { it.riskLevel == RiskLevel.MEDIUM },
+            low = list.count { it.riskLevel == RiskLevel.LOW },
+            sideloaded = list.count { it.inventory.isSideloaded }
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FilterCounts())
 
     val filteredApps: StateFlow<List<AppRiskReport>> = combine(
         scanState,
@@ -88,8 +112,8 @@ class AppListViewModel(
         _selectedSort.value = sort
     }
 
-    fun rescan() {
-        val includeSystem = app.settingsManager.includeSystemApps.value
-        app.scanManager.startScan(includeSystem)
+    fun toggleIncludeSystemApps(include: Boolean) {
+        app.settingsManager.setIncludeSystemApps(include)
+        app.scanManager.startScan(include)
     }
 }

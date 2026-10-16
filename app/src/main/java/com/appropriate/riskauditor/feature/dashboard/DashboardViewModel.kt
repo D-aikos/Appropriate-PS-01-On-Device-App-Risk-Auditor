@@ -8,7 +8,6 @@ import com.appropriate.riskauditor.core.scanner.ScanState
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 
 class DashboardViewModel(
     private val app: RiskAuditorApp = RiskAuditorApp.instance
@@ -16,6 +15,12 @@ class DashboardViewModel(
 
     val scanState: StateFlow<ScanState> = app.scanManager.scanState
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ScanState.Idle)
+
+    val includeSystemApps: StateFlow<Boolean> = app.settingsManager.includeSystemApps
+
+    fun toggleIncludeSystemApps(include: Boolean) {
+        app.settingsManager.setIncludeSystemApps(include)
+    }
 
     fun startScan() {
         val includeSystem = app.settingsManager.includeSystemApps.value
