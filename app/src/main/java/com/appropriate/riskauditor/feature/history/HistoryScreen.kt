@@ -22,16 +22,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.appropriate.riskauditor.app.theme.*
 import com.appropriate.riskauditor.core.model.RiskLevel
 import com.appropriate.riskauditor.core.storage.ScanAppSummaryEntity
 import com.appropriate.riskauditor.core.storage.ScanHistoryEntity
-import java.text.SimpleDateFormat
-import java.util.*
+import com.appropriate.riskauditor.feature.common.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(viewModel: HistoryViewModel) {
+fun HistoryScreen(
+    viewModel: HistoryViewModel,
+    onNavigateToAppDetail: (String) -> Unit = {}
+) {
     val historyList by viewModel.scanHistory.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
     var selectedScanForDetail by remember { mutableStateOf<ScanHistoryEntity?>(null) }
@@ -79,7 +80,7 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
                             viewModel.clearAll()
                             showClearDialog = false
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = RiskCriticalColor)
+                        colors = ButtonDefaults.buttonColors(containerColor = BandCriticalColor)
                     ) {
                         Text("Clear All")
                     }
@@ -93,18 +94,19 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
             )
         }
 
-        // Scan Detail Modal BottomSheet / Dialog
+        // Scan Detail Modal BottomSheet
         selectedScanForDetail?.let { scan ->
             val appsForScan by viewModel.getAppsForScan(scan.scanId).collectAsState(initial = emptyList())
 
             ModalBottomSheet(
                 onDismissRequest = { selectedScanForDetail = null },
-                containerColor = DarkSurface
+                containerColor = DarkSurface,
+                dragHandle = { BottomSheetDefaults.DragHandle(color = DarkBorder) }
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 10.dp)
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -112,17 +114,16 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            val dateFormat = SimpleDateFormat("MMM dd, yyyy  •  HH:mm", Locale.getDefault())
                             Text(
-                                text = "Scan Snapshot: ${dateFormat.format(Date(scan.timestampEpochMillis))}",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = "Scan Snapshot Details",
+                                style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                             Text(
-                                text = "${appsForScan.size} apps captured in this scan",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextMuted
+                                text = formatDate(scan.timestampEpochMillis),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
                             )
                         }
                         IconButton(onClick = { selectedScanForDetail = null }) {
@@ -131,6 +132,27 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StatPill("Total", "${scan.totalAppsScanned}", DarkSurfaceVariant)
+                        StatPill("Critical", "${scan.criticalCount}", BandCriticalColor.copy(alpha = 0.25f))
+                        StatPill("High", "${scan.highCount}", BandHighColor.copy(alpha = 0.25f))
+                        StatPill("Medium", "${scan.mediumCount}", BandMediumColor.copy(alpha = 0.25f))
+                        StatPill("Low", "${scan.lowCount}", BandLowColor.copy(alpha = 0.25f))
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Audited Applications (${appsForScan.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -138,175 +160,155 @@ fun HistoryScreen(viewModel: HistoryViewModel) {
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(appsForScan, key = { it.packageName }) { appItem ->
-                            HistoricalAppItemRow(appItem = appItem)
+                            HistoricalAppRow(appItem = appItem)
                         }
                     }
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
 
         if (historyList.isEmpty()) {
-            Box(
+            EmptyState(
+                icon = Icons.Default.History,
+                title = "No scans yet",
+                body = "Completed on-device audits will be saved here automatically for offline review and diffing.",
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(imageVector = Icons.Default.History, contentDescription = null, tint = TextMuted, modifier = Modifier.size(54.dp))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(text = "No Previous Scans Recorded", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = "Run an on-device audit from the Dashboard to record scan logs.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
-                }
-            }
+                    .padding(paddingValues)
+            )
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)
             ) {
-                item { Spacer(modifier = Modifier.height(4.dp)) }
                 items(historyList, key = { it.scanId }) { scanItem ->
-                    HistoryItemCard(
-                        item = scanItem,
-                        onClick = { selectedScanForDetail = scanItem },
-                        onDeleteClick = { viewModel.deleteScan(scanItem.scanId) }
+                    ScanHistoryCard(
+                        scan = scanItem,
+                        onClick = { selectedScanForDetail = scanItem }
                     )
                 }
-                item { Spacer(modifier = Modifier.height(20.dp)) }
             }
         }
     }
 }
 
 @Composable
-fun HistoryItemCard(
-    item: ScanHistoryEntity,
-    onClick: () -> Unit,
-    onDeleteClick: () -> Unit
+fun ScanHistoryCard(
+    scan: ScanHistoryEntity,
+    onClick: () -> Unit
 ) {
-    val dateFormat = SimpleDateFormat("MMM dd, yyyy  •  HH:mm:ss", Locale.getDefault())
-    val dateStr = dateFormat.format(Date(item.timestampEpochMillis))
-
-    val level = RiskLevel.fromScore(item.averageRiskScore)
-    val levelColor = when (level) {
-        RiskLevel.CRITICAL -> RiskCriticalColor
-        RiskLevel.HIGH -> RiskHighColor
-        RiskLevel.MEDIUM -> RiskMediumColor
-        RiskLevel.LOW -> RiskLowColor
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .border(1.dp, BorderStrokeColor, RoundedCornerShape(12.dp)),
+            .border(1.dp, DarkBorder, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(14.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(text = dateStr, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-                    Text(text = "Scan ID: ${item.scanId.take(8)} • Tap to inspect apps", style = MaterialTheme.typography.labelSmall, color = PrimaryLightBlue)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = formatDate(scan.timestampEpochMillis),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${scan.totalAppsScanned} apps audited • Avg score: ${scan.averageRiskScore}/100",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
                 }
-                IconButton(onClick = onDeleteClick) {
-                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = TextMuted, modifier = Modifier.size(20.dp))
-                }
+                StateChip(text = "Complete", kind = StateChipKind.POSITIVE)
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "${item.totalAppsScanned} Apps Audited (${item.userAppsScanned} User, ${item.systemAppsScanned} System) • Avg Score: ${item.averageRiskScore}/100",
-                style = MaterialTheme.typography.bodySmall,
-                color = TextSecondary
-            )
+            Spacer(modifier = Modifier.height(12.dp))
 
-            Spacer(modifier = Modifier.height(10.dp))
+            // Risk count pill breakdown
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SmallPill("Crit: ${item.criticalCount}", RiskCriticalColor)
-                SmallPill("High: ${item.highCount}", RiskHighColor)
-                SmallPill("Med: ${item.mediumCount}", RiskMediumColor)
-                SmallPill("Low: ${item.lowCount}", RiskLowColor)
+                if (scan.criticalCount > 0) {
+                    StateChip(text = "${scan.criticalCount} Critical", kind = StateChipKind.NEGATIVE)
+                }
+                if (scan.highCount > 0) {
+                    StateChip(text = "${scan.highCount} High", kind = StateChipKind.WARNING)
+                }
+                if (scan.mediumCount > 0) {
+                    StateChip(text = "${scan.mediumCount} Medium", kind = StateChipKind.WARNING)
+                }
+                if (scan.lowCount > 0) {
+                    StateChip(text = "${scan.lowCount} Low", kind = StateChipKind.POSITIVE)
+                }
             }
         }
     }
 }
 
 @Composable
-fun HistoricalAppItemRow(appItem: ScanAppSummaryEntity) {
-    val levelColor = when (appItem.riskLevel) {
-        "CRITICAL" -> RiskCriticalColor
-        "HIGH" -> RiskHighColor
-        "MEDIUM" -> RiskMediumColor
-        else -> RiskLowColor
-    }
-
-    Row(
+private fun HistoricalAppRow(appItem: ScanAppSummaryEntity) {
+    val level = RiskLevel.valueOf(appItem.riskLevel)
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(DarkSurfaceVariant)
-            .padding(10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .border(1.dp, DarkBorder, RoundedCornerShape(10.dp)),
+        color = DarkSurfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(10.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = appItem.appLabel,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = appItem.topFindingTitle ?: "${appItem.findingsCount} findings",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Spacer(modifier = Modifier.width(8.dp))
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(levelColor.copy(alpha = 0.15f))
-                .border(1.dp, levelColor.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
-                text = "${appItem.riskScore} [${appItem.riskLevel.take(4)}]",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = levelColor
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = appItem.appLabel,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = appItem.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            RiskBadge(level = level, score = appItem.riskScore)
         }
     }
 }
 
 @Composable
-fun SmallPill(text: String, color: androidx.compose.ui.graphics.Color) {
+private fun RowScope.StatPill(label: String, value: String, bgColor: androidx.compose.ui.graphics.Color) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(color.copy(alpha = 0.15f))
-            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .weight(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bgColor)
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(text = text, style = MaterialTheme.typography.labelSmall, color = color, fontWeight = FontWeight.Bold)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = value, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextPrimary)
+            Text(text = label, fontSize = 10.sp, color = TextSecondary)
+        }
     }
 }

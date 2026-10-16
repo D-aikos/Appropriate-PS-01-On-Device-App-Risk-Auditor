@@ -5,6 +5,7 @@ import com.appropriate.riskauditor.core.model.DeviceScanSummary
 import com.appropriate.riskauditor.core.storage.ScanHistoryRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,13 +21,14 @@ sealed class ScanState {
 
 /**
  * Global on-device scan manager coordinating active scans, caching current results,
- * and saving completed scans to local Room history.
+ * cooperative cancellation, and saving completed scans to local Room history.
  */
 class ScanManager(
     private val appScanner: AppScanner,
     private val historyRepository: ScanHistoryRepository
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var scanJob: Job? = null
 
     private val _scanState = MutableStateFlow<ScanState>(ScanState.Idle)
     val scanState: StateFlow<ScanState> = _scanState.asStateFlow()
@@ -42,27 +44,39 @@ class ScanManager(
     fun startScan(includeSystemApps: Boolean = false) {
         if (_scanState.value is ScanState.Scanning) return
 
-        scope.launch {
-            appScanner.scanDevice(includeSystemApps).collect { progress ->
-                when (progress) {
-                    is ScanProgress.Progress -> {
-                        _scanState.value = ScanState.Scanning(
-                            current = progress.current,
-                            total = progress.total,
-                            appLabel = progress.appLabel
-                        )
-                    }
-                    is ScanProgress.Completed -> {
-                        cachedSummary = progress.summary
-                        _scanState.value = ScanState.Success(progress.summary)
-                        // Persist to Room local history
-                        historyRepository.saveScan(progress.summary)
-                    }
-                    is ScanProgress.Error -> {
-                        _scanState.value = ScanState.Error(progress.message)
+        scanJob = scope.launch {
+            try {
+                appScanner.scanDevice(includeSystemApps).collect { progress ->
+                    when (progress) {
+                        is ScanProgress.Progress -> {
+                            _scanState.value = ScanState.Scanning(
+                                current = progress.current,
+                                total = progress.total,
+                                appLabel = progress.appLabel
+                            )
+                        }
+                        is ScanProgress.Completed -> {
+                            cachedSummary = progress.summary
+                            _scanState.value = ScanState.Success(progress.summary)
+                            // Persist to Room local history
+                            historyRepository.saveScan(progress.summary)
+                        }
+                        is ScanProgress.Error -> {
+                            _scanState.value = ScanState.Error(progress.message)
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                _scanState.value = ScanState.Idle
             }
+        }
+    }
+
+    fun cancelScan() {
+        scanJob?.cancel()
+        scanJob = null
+        if (_scanState.value is ScanState.Scanning) {
+            _scanState.value = ScanState.Idle
         }
     }
 }

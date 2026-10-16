@@ -7,22 +7,29 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.appropriate.riskauditor.app.theme.*
 import com.appropriate.riskauditor.core.model.AppRiskReport
+import com.appropriate.riskauditor.core.model.RiskCategory
 import com.appropriate.riskauditor.core.model.RiskLevel
+import com.appropriate.riskauditor.feature.common.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,13 +38,15 @@ fun AppListScreen(
     onNavigateToAppDetail: (String) -> Unit
 ) {
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedFilter by viewModel.selectedFilter.collectAsState()
+    val selectedBands by viewModel.selectedBands.collectAsState()
+    val selectedCategory by viewModel.selectedCategory.collectAsState()
     val selectedSort by viewModel.selectedSort.collectAsState()
     val apps by viewModel.filteredApps.collectAsState()
     val counts by viewModel.filterCounts.collectAsState()
     val includeSystemApps by viewModel.includeSystemApps.collectAsState()
 
     var showSortMenu by remember { mutableStateOf(false) }
+    var showCategoryMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -50,22 +59,66 @@ fun AppListScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${counts.all} total apps audited",
+                            text = "Showing ${apps.size} of ${counts.total} apps",
                             style = MaterialTheme.typography.labelSmall,
-                            color = TextMuted
+                            color = TextSecondary
                         )
                     }
                 },
                 actions = {
+                    // Category Filter Action
+                    IconButton(onClick = { showCategoryMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.FilterList,
+                            contentDescription = "Filter by category",
+                            tint = if (selectedCategory != null) PrimaryLightBlue else TextPrimary
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showCategoryMenu,
+                        onDismissRequest = { showCategoryMenu = false },
+                        modifier = Modifier.background(DarkSurface)
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = "All Categories",
+                                    color = if (selectedCategory == null) PrimaryLightBlue else TextPrimary,
+                                    fontWeight = if (selectedCategory == null) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            onClick = {
+                                viewModel.selectCategory(null)
+                                showCategoryMenu = false
+                            }
+                        )
+                        RiskCategory.values().forEach { category ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = category.displayName(),
+                                        color = if (selectedCategory == category) PrimaryLightBlue else TextPrimary,
+                                        fontWeight = if (selectedCategory == category) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.selectCategory(category)
+                                    showCategoryMenu = false
+                                }
+                            )
+                        }
+                    }
+
+                    // Sort Action
                     IconButton(onClick = { showSortMenu = true }) {
-                        Icon(imageVector = Icons.Default.Sort, contentDescription = "Sort", tint = TextPrimary)
+                        Icon(imageVector = Icons.Default.Sort, contentDescription = "Sort apps", tint = TextPrimary)
                     }
                     DropdownMenu(
                         expanded = showSortMenu,
                         onDismissRequest = { showSortMenu = false },
                         modifier = Modifier.background(DarkSurface)
                     ) {
-                        SortOrder.values().forEach { sort ->
+                        AppSortOrder.values().forEach { sort ->
                             DropdownMenuItem(
                                 text = {
                                     Text(
@@ -98,142 +151,179 @@ fun AppListScreen(
             // Search Input Field
             OutlinedTextField(
                 value = searchQuery,
-                onValueChange = { viewModel.updateSearchQuery(it) },
-                placeholder = { Text("Search by app name or package…", color = TextMuted) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextSecondary) },
+                onValueChange = { viewModel.setSearchQuery(it) },
+                placeholder = { Text("Search by name or package...", color = TextMuted) },
+                leadingIcon = {
+                    Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = TextMuted)
+                },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.updateSearchQuery("") }) {
-                            Icon(Icons.Default.Clear, contentDescription = "Clear", tint = TextSecondary)
+                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "Clear search", tint = TextMuted)
                         }
                     }
                 },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = PrimaryBlue,
-                    unfocusedBorderColor = BorderStrokeColor,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary,
-                    focusedContainerColor = DarkSurface,
-                    unfocusedContainerColor = DarkSurface
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-            )
-
-            // Filter Chips Row with Live Count Badges
-            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                item {
-                    FilterChipWithCount(
-                        title = "All",
-                        count = counts.all,
-                        isSelected = selectedFilter == RiskFilter.ALL,
-                        onClick = { viewModel.selectFilter(RiskFilter.ALL) }
-                    )
-                }
-                item {
-                    FilterChipWithCount(
-                        title = "Critical",
-                        count = counts.critical,
-                        isSelected = selectedFilter == RiskFilter.CRITICAL,
-                        badgeColor = RiskCriticalColor,
-                        onClick = { viewModel.selectFilter(RiskFilter.CRITICAL) }
-                    )
-                }
-                item {
-                    FilterChipWithCount(
-                        title = "High",
-                        count = counts.high,
-                        isSelected = selectedFilter == RiskFilter.HIGH,
-                        badgeColor = RiskHighColor,
-                        onClick = { viewModel.selectFilter(RiskFilter.HIGH) }
-                    )
-                }
-                item {
-                    FilterChipWithCount(
-                        title = "Medium",
-                        count = counts.medium,
-                        isSelected = selectedFilter == RiskFilter.MEDIUM,
-                        badgeColor = RiskMediumColor,
-                        onClick = { viewModel.selectFilter(RiskFilter.MEDIUM) }
-                    )
-                }
-                item {
-                    FilterChipWithCount(
-                        title = "Low",
-                        count = counts.low,
-                        isSelected = selectedFilter == RiskFilter.LOW,
-                        badgeColor = RiskLowColor,
-                        onClick = { viewModel.selectFilter(RiskFilter.LOW) }
-                    )
-                }
-                item {
-                    FilterChipWithCount(
-                        title = "Sideloaded",
-                        count = counts.sideloaded,
-                        isSelected = selectedFilter == RiskFilter.SIDELOADED,
-                        badgeColor = RiskHighColor,
-                        onClick = { viewModel.selectFilter(RiskFilter.SIDELOADED) }
-                    )
-                }
-            }
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PrimaryLightBlue,
+                    unfocusedBorderColor = DarkBorder,
+                    focusedContainerColor = DarkSurface,
+                    unfocusedContainerColor = DarkSurface,
+                    focusedTextColor = TextPrimary,
+                    unfocusedTextColor = TextPrimary
+                ),
+                singleLine = true
+            )
 
-            // Results Counter & Quick Scope Indicator
+            // Band Filter Chips (Critical, High, Medium, Low) & System App Switch
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "${apps.size} matching applications",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted
-                )
-
-                Text(
-                    text = "Sorted by: ${selectedSort.displayName}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = PrimaryLightBlue
-                )
-            }
-
-            // Apps Lazy List
-            if (apps.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+                LazyRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.SearchOff, contentDescription = null, tint = TextMuted, modifier = Modifier.size(48.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("No matching applications found", style = MaterialTheme.typography.titleMedium, color = TextSecondary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text("Try selecting a different filter or clearing search.", style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                    val bands = listOf(
+                        RiskLevel.CRITICAL to counts.critical,
+                        RiskLevel.HIGH to counts.high,
+                        RiskLevel.MEDIUM to counts.medium,
+                        RiskLevel.LOW to counts.low
+                    )
+
+                    items(bands) { (band, count) ->
+                        val isSelected = selectedBands.contains(band)
+                        val bandColor = colorForRiskLevel(band)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { viewModel.toggleBand(band) },
+                            label = {
+                                Text(
+                                    text = "${band.displayName()} ($count)",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = DarkSurface,
+                                labelColor = TextSecondary,
+                                selectedContainerColor = bandColor.copy(alpha = 0.22f),
+                                selectedLabelColor = bandColor
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = isSelected,
+                                borderColor = if (isSelected) bandColor else DarkBorder
+                            )
+                        )
                     }
                 }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Instant System Apps Toggle Switch
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(DarkSurface)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "System",
+                        fontSize = 11.sp,
+                        color = if (includeSystemApps) PrimaryLightBlue else TextMuted
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Switch(
+                        checked = includeSystemApps,
+                        onCheckedChange = { viewModel.toggleIncludeSystemApps(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = AccentGreen,
+                            checkedTrackColor = PrimaryBlue
+                        ),
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+            }
+
+            // Active category filter tag (if selected)
+            if (selectedCategory != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = PrimaryBlue.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, PrimaryLightBlue.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Category: ${selectedCategory?.displayName()}",
+                                fontSize = 12.sp,
+                                color = PrimaryLightBlue,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear category filter",
+                                tint = PrimaryLightBlue,
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { viewModel.selectCategory(null) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Main App List or Empty States
+            if (counts.total == 0) {
+                EmptyState(
+                    icon = Icons.Default.Search,
+                    title = if (includeSystemApps) "No apps found" else "No user-installed apps found",
+                    body = "Try scanning again or toggling '+ System Apps' to include pre-installed OS applications.",
+                    modifier = Modifier.weight(1f)
+                )
+            } else if (apps.isEmpty()) {
+                EmptyState(
+                    icon = Icons.Default.Search,
+                    title = "No apps match these filters",
+                    body = "Try adjusting your search query, clearing risk band filters, or selecting all categories.",
+                    actionText = "Clear Filters",
+                    onActionClick = { viewModel.clearFilters() },
+                    modifier = Modifier.weight(1f)
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
                 ) {
                     items(apps, key = { it.inventory.packageName }) { appReport ->
-                        AppListItemRow(
+                        AppRowItem(
                             appReport = appReport,
                             onClick = { onNavigateToAppDetail(appReport.inventory.packageName) }
                         )
                     }
-                    item { Spacer(modifier = Modifier.height(20.dp)) }
                 }
             }
         }
@@ -241,184 +331,78 @@ fun AppListScreen(
 }
 
 @Composable
-fun FilterChipWithCount(
-    title: String,
-    count: Int,
-    isSelected: Boolean,
-    badgeColor: androidx.compose.ui.graphics.Color? = null,
+fun AppRowItem(
+    appReport: AppRiskReport,
     onClick: () -> Unit
 ) {
-    FilterChip(
-        selected = isSelected,
-        onClick = onClick,
-        label = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(title)
-                Spacer(modifier = Modifier.width(6.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(badgeColor?.copy(alpha = 0.2f) ?: DarkSurfaceVariant)
-                        .padding(horizontal = 6.dp, vertical = 1.dp)
-                ) {
-                    Text(
-                        text = "$count",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = badgeColor ?: TextSecondary
-                    )
-                }
-            }
-        },
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = DarkSurface,
-            labelColor = TextSecondary,
-            selectedContainerColor = PrimaryBlue.copy(alpha = 0.2f),
-            selectedLabelColor = PrimaryLightBlue
-        ),
-        border = FilterChipDefaults.filterChipBorder(
-            enabled = true,
-            selected = isSelected,
-            borderColor = if (isSelected) PrimaryLightBlue else BorderStrokeColor
-        )
-    )
-}
-
-@Composable
-fun AppListItemRow(appReport: AppRiskReport, onClick: () -> Unit) {
-    val levelColor = when (appReport.riskLevel) {
-        RiskLevel.CRITICAL -> RiskCriticalColor
-        RiskLevel.HIGH -> RiskHighColor
-        RiskLevel.MEDIUM -> RiskMediumColor
-        RiskLevel.LOW -> RiskLowColor
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, DarkBorder, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
-            .border(1.dp, BorderStrokeColor, RoundedCornerShape(12.dp)),
+            .semantics {
+                contentDescription = "${appReport.inventory.appLabel}, ${appReport.riskLevel.displayName()} risk score ${appReport.riskScore}"
+            },
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(14.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // App Avatar / Initials
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(DarkSurfaceVariant)
-                    .border(1.dp, BorderStrokeColor, CircleShape),
-                contentAlignment = Alignment.Center
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = appReport.inventory.appLabel.take(1).uppercase(),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = PrimaryLightBlue
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // App Label and Package
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                AppIcon(packageName = appReport.inventory.packageName, size = 48.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = appReport.inventory.appLabel,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    if (appReport.inventory.isSideloaded) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(RiskHighColor.copy(alpha = 0.15f))
-                                .border(1.dp, RiskHighColor.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                        ) {
-                            Text("Sideloaded", fontSize = 9.sp, color = RiskHighColor, fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    if (appReport.inventory.isSystemApp) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(DarkSurfaceVariant)
-                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                        ) {
-                            Text("System", fontSize = 9.sp, color = TextMuted, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = appReport.inventory.packageName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-                val topFinding = appReport.findings.firstOrNull()
-                if (topFinding != null) {
-                    Text(
-                        text = "• ${topFinding.title}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = PrimaryLightBlue,
+                        fontSize = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                } else {
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${appReport.grantedPermissionCount} granted • Target SDK ${appReport.inventory.targetSdk ?: "N/A"}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextMuted
+                        text = appReport.inventory.packageName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                RiskBadge(level = appReport.riskLevel, score = appReport.riskScore)
+            }
+
+            // Top-2 finding titles as small text
+            val findings = appReport.findings.take(2)
+            if (findings.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    findings.forEach { finding ->
+                        Text(
+                            text = "• ${finding.title}",
+                            fontSize = 11.sp,
+                            color = TextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Risk Score Badge
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(levelColor.copy(alpha = 0.15f))
-                    .border(1.dp, levelColor.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "${appReport.riskScore}",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = levelColor
-                    )
-                    Text(
-                        text = appReport.riskLevel.name.take(4),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = levelColor
-                    )
+            // Tags row: Sideloaded / System
+            if (appReport.inventory.isSideloaded || appReport.inventory.isSystemApp) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (appReport.inventory.isSideloaded) {
+                        StateChip(text = "Installed outside a store", kind = StateChipKind.WARNING)
+                    }
+                    if (appReport.inventory.isSystemApp) {
+                        StateChip(text = "System app", kind = StateChipKind.NEUTRAL)
+                    }
                 }
             }
         }

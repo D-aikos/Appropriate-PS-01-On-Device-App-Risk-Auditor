@@ -1,4 +1,4 @@
-package com.appropriate.riskauditor.feature.apps
+package com.appropriate.riskauditor.feature.detail
 
 import androidx.lifecycle.ViewModel
 import com.appropriate.riskauditor.RiskAuditorApp

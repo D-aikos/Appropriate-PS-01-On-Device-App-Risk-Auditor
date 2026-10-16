@@ -1,42 +1,49 @@
 package com.appropriate.riskauditor.feature.dashboard
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.appropriate.riskauditor.app.theme.*
-import com.appropriate.riskauditor.core.model.*
+import com.appropriate.riskauditor.core.model.AppRiskReport
+import com.appropriate.riskauditor.core.model.DeviceScanSummary
+import com.appropriate.riskauditor.core.model.RiskCategory
+import com.appropriate.riskauditor.core.model.RiskLevel
 import com.appropriate.riskauditor.core.scanner.ScanState
+import com.appropriate.riskauditor.feature.common.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel,
     onNavigateToAppDetail: (String) -> Unit,
-    onNavigateToAppList: () -> Unit
+    onNavigateToAppList: () -> Unit,
+    onNavigateToAppListWithBand: (RiskLevel) -> Unit,
+    onNavigateToAppListWithCategory: (RiskCategory) -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     val scanState by viewModel.scanState.collectAsState()
     val includeSystemApps by viewModel.includeSystemApps.collectAsState()
@@ -80,7 +87,12 @@ fun DashboardScreen(
                     FilterChip(
                         selected = includeSystemApps,
                         onClick = { viewModel.toggleIncludeSystemApps(!includeSystemApps) },
-                        label = { Text(if (includeSystemApps) "+ System Apps" else "User Apps Only", fontSize = 11.sp) },
+                        label = {
+                            Text(
+                                if (includeSystemApps) "+ System Apps" else "User Apps Only",
+                                fontSize = 11.sp
+                            )
+                        },
                         colors = FilterChipDefaults.filterChipColors(
                             containerColor = DarkSurface,
                             labelColor = TextSecondary,
@@ -90,7 +102,7 @@ fun DashboardScreen(
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = includeSystemApps,
-                            borderColor = if (includeSystemApps) PrimaryLightBlue else BorderStrokeColor
+                            borderColor = if (includeSystemApps) PrimaryLightBlue else DarkBorder
                         ),
                         modifier = Modifier.padding(end = 12.dp)
                     )
@@ -112,602 +124,458 @@ fun DashboardScreen(
         ) {
             item { Spacer(modifier = Modifier.height(2.dp)) }
 
-            // 1. Hero Status Card
+            // Block 1: Title + Subtitle ("Everything is checked on this phone. Nothing is uploaded.")
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Device Security Assessment",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "Everything is checked on this phone. Nothing is uploaded.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AccentGreen
+                    )
+                }
+            }
+
+            // Block 2: Primary Button "Scan my apps" / "Cancel scan" & Progress
             item {
                 when (val state = scanState) {
                     is ScanState.Idle -> {
-                        IdleHeroCard(onScanClick = { viewModel.startScan() }, includeSystem = includeSystemApps)
+                        Button(
+                            onClick = { viewModel.startScan() },
+                            colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Scan my apps", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
                     }
+
                     is ScanState.Scanning -> {
-                        ScanningHeroCard(current = state.current, total = state.total, appLabel = state.appLabel)
+                        val progress = if (state.total > 0) state.current.toFloat() / state.total else 0f
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, PrimaryBlue.copy(alpha = 0.6f), RoundedCornerShape(14.dp)),
+                            colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Checking ${state.appLabel} (${state.current} of ${state.total})",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    OutlinedButton(
+                                        onClick = { viewModel.cancelScan() },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                                            brush = androidx.compose.ui.graphics.SolidColor(BandCriticalColor)
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp), tint = BandCriticalColor)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Cancel", fontSize = 12.sp, color = BandCriticalColor)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    color = PrimaryLightBlue,
+                                    trackColor = DarkSurfaceVariant
+                                )
+                            }
+                        }
                     }
+
                     is ScanState.Success -> {
-                        SummaryHeroCard(
-                            summary = state.summary,
-                            onRescanClick = { viewModel.startScan() },
-                            onExportPdfClick = { viewModel.exportPdfReport(state.summary) }
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Button(
+                                onClick = { viewModel.startScan() },
+                                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Rescan apps", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
+
                     is ScanState.Error -> {
-                        ErrorCard(message = state.message, onRetryClick = { viewModel.startScan() })
+                        ErrorBanner(
+                            text = state.message,
+                            onRetry = { viewModel.startScan() }
+                        )
                     }
                 }
             }
 
-            // 2. Scan Results Sections (Risk Distribution, Category Breakdown & Threat Flags)
+            // When scanState is Idle and no previous scan has run
+            if (scanState is ScanState.Idle) {
+                item {
+                    EmptyState(
+                        icon = Icons.Default.Security,
+                        title = "No audit scan performed yet",
+                        body = "Tap 'Scan my apps' above to evaluate installed applications against on-device risk rules, permission combinations, and special access capabilities.",
+                        actionText = "Start Scan",
+                        onActionClick = { viewModel.startScan() }
+                    )
+                }
+            }
+
+            // Finished state with results
             if (scanState is ScanState.Success) {
-                val summary = (scanState as ScanState.Success).summary
+                val fullSummary = (scanState as ScanState.Success).summary
+                val filteredApps = viewModel.filterReports(fullSummary.appReports, includeSystemApps)
 
-                // Risk Distribution Grid
-                item {
-                    RiskDistributionCard(summary = summary, onNavigateToAppList = onNavigateToAppList)
+                // Block 3: PartialBanner if warnings exist
+                val warnings = mutableListOf<String>()
+                if (fullSummary.systemAppsScanned == 0 && includeSystemApps) {
+                    warnings.add("System applications could not be fully enumerated.")
+                }
+                if (warnings.isNotEmpty()) {
+                    item {
+                        PartialBanner(warnings = warnings)
+                    }
                 }
 
-                // Category Exposure Overview
+                // Block 4: 2x2 Risk Band Grid (Critical, High, Medium, Low)
                 item {
-                    CategoryOverviewCard(summary = summary)
-                }
+                    val criticalCount = filteredApps.count { it.riskLevel == RiskLevel.CRITICAL }
+                    val highCount = filteredApps.count { it.riskLevel == RiskLevel.HIGH }
+                    val mediumCount = filteredApps.count { it.riskLevel == RiskLevel.MEDIUM }
+                    val lowCount = filteredApps.count { it.riskLevel == RiskLevel.LOW }
 
-                // Header for Priority Threat Flags
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = "Priority Threat Flags",
+                            text = "Risk Band Distribution",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
                         )
-                        TextButton(onClick = onNavigateToAppList) {
-                            Text("View All (${summary.totalAppsScanned})", color = PrimaryLightBlue)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Row 1: Critical & High
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            BandCard(
+                                level = RiskLevel.CRITICAL,
+                                count = criticalCount,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onNavigateToAppListWithBand(RiskLevel.CRITICAL) }
+                            )
+                            BandCard(
+                                level = RiskLevel.HIGH,
+                                count = highCount,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onNavigateToAppListWithBand(RiskLevel.HIGH) }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        // Row 2: Medium & Low
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            BandCard(
+                                level = RiskLevel.MEDIUM,
+                                count = mediumCount,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onNavigateToAppListWithBand(RiskLevel.MEDIUM) }
+                            )
+                            BandCard(
+                                level = RiskLevel.LOW,
+                                count = lowCount,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onNavigateToAppListWithBand(RiskLevel.LOW) }
+                            )
                         }
                     }
                 }
 
-                val highPriorityApps = summary.highAndCriticalReports
-                if (highPriorityApps.isEmpty()) {
-                    item {
-                        CleanDeviceCard()
+                // Block 5: "Apps that could do the most harm" (Q1): top 5 rows
+                item {
+                    val topRiskyApps = filteredApps.take(5)
+                    SectionCard(
+                        title = "Apps that could do the most harm",
+                        subtitle = "Top priority applications by privilege exposure",
+                        action = {
+                            TextButton(onClick = onNavigateToAppList) {
+                                Text("View all (${filteredApps.size})", color = PrimaryLightBlue, fontSize = 13.sp)
+                            }
+                        }
+                    ) {
+                        if (topRiskyApps.isEmpty()) {
+                            Text(
+                                text = "No apps audited matching current scope.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextSecondary
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                topRiskyApps.forEach { appReport ->
+                                    TopAppRow(
+                                        appReport = appReport,
+                                        onClick = { onNavigateToAppDetail(appReport.inventory.packageName) }
+                                    )
+                                }
+                            }
+                        }
                     }
-                } else {
-                    items(highPriorityApps.take(6)) { appReport ->
-                        PriorityAppCard(
-                            appReport = appReport,
-                            onClick = { onNavigateToAppDetail(appReport.inventory.packageName) }
-                        )
+                }
+
+                // Block 6: "What apps can access on this phone": 9 rows in fixed order
+                item {
+                    val totalApps = filteredApps.size.coerceAtLeast(1)
+                    val categoryStats = viewModel.computeCategoryStats(filteredApps)
+
+                    SectionCard(
+                        title = "What apps can access on this phone",
+                        subtitle = "Device-wide capability footprint across 9 audit categories"
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            categoryStats.forEach { stat ->
+                                CategoryAccessRow(
+                                    stat = stat,
+                                    totalApps = totalApps,
+                                    onClick = { onNavigateToAppListWithCategory(stat.category) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Block 7: Footer link "Privacy & limits" -> Settings tab
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        TextButton(onClick = onNavigateToSettings) {
+                            Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(16.dp), tint = PrimaryLightBlue)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Privacy & limits: How this on-device audit works",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = PrimaryLightBlue,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }
 
-            item { Spacer(modifier = Modifier.height(24.dp)) }
+            item { Spacer(modifier = Modifier.height(16.dp)) }
         }
     }
 }
 
 @Composable
-fun IdleHeroCard(onScanClick: () -> Unit, includeSystem: Boolean) {
+private fun BandCard(
+    level: RiskLevel,
+    count: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bandColor = colorForRiskLevel(level)
+    val word = level.displayName()
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BorderStrokeColor, RoundedCornerShape(16.dp)),
+        modifier = modifier
+            .semantics { contentDescription = "$word risk band, $count apps. Tap to view list." }
+            .border(1.5.dp, bandColor.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(14.dp)
     ) {
         Column(
-            modifier = Modifier.padding(22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Box(
-                modifier = Modifier
-                    .size(68.dp)
-                    .clip(CircleShape)
-                    .background(PrimaryBlue.copy(alpha = 0.15f))
-                    .border(1.dp, PrimaryBlue.copy(alpha = 0.35f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Security,
-                    contentDescription = null,
-                    tint = PrimaryLightBlue,
-                    modifier = Modifier.size(38.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "On-Device Security Audit",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Audit installed packages, manifest declarations vs runtime grants, and special access capabilities (Accessibility, Device Admin, Overlays).",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Audit Scope Hint
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(DarkSurfaceVariant)
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Icon(imageVector = Icons.Default.Info, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (includeSystem) "Scope: Auditing User and System apps" else "Scope: Auditing User-installed apps only",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-            Button(
-                onClick = onScanClick,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-            ) {
-                Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Start Full Device Audit", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-            }
-        }
-    }
-}
-
-@Composable
-fun ScanningHeroCard(current: Int, total: Int, appLabel: String) {
-    val progress = if (total > 0) current.toFloat() / total else 0f
-
-    // Pulse animation
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, PrimaryBlue.copy(alpha = pulseAlpha), RoundedCornerShape(16.dp)),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(AccentGreen)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Auditing Applications…",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                }
-
                 Text(
-                    text = "$current / $total",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = word,
                     fontWeight = FontWeight.Bold,
-                    color = PrimaryLightBlue
+                    color = bandColor,
+                    fontSize = 15.sp
+                )
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(bandColor)
                 )
             }
-
-            Spacer(modifier = Modifier.height(14.dp))
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(RoundedCornerShape(4.dp)),
-                color = AccentGreen,
-                trackColor = DarkSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
                 Text(
-                    text = "Inspecting: $appLabel",
+                    text = "$count",
+                    fontWeight = FontWeight.Black,
+                    fontSize = 28.sp,
+                    color = Color.White
+                )
+                Text(
+                    text = if (count == 1) "app" else "apps",
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopAppRow(
+    appReport: AppRiskReport,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, DarkBorder, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        color = DarkSurfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppIcon(packageName = appReport.inventory.packageName, size = 44.dp)
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = appReport.inventory.appLabel,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    RiskBadge(level = appReport.riskLevel, score = appReport.riskScore)
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                val topFindingTitle = appReport.findings.firstOrNull()?.title ?: "Standard permission profile"
+                Text(
+                    text = topFindingTitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
+            Spacer(modifier = Modifier.width(6.dp))
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = TextMuted,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
 
 @Composable
-fun SummaryHeroCard(
-    summary: DeviceScanSummary,
-    onRescanClick: () -> Unit,
-    onExportPdfClick: () -> Unit
+private fun CategoryAccessRow(
+    stat: CategoryUsageStat,
+    totalApps: Int,
+    onClick: () -> Unit
 ) {
-    val postureColor = when (summary.overallRiskLevel) {
-        RiskLevel.CRITICAL -> RiskCriticalColor
-        RiskLevel.HIGH -> RiskHighColor
-        RiskLevel.MEDIUM -> RiskMediumColor
-        RiskLevel.LOW -> RiskLowColor
-    }
+    val ratio = if (totalApps > 0) stat.appsWithAccess.toFloat() / totalApps else 0f
 
-    Card(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, postureColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp)),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(16.dp)
+            .clickable(onClick = onClick),
+        color = Color.Transparent
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Device Security Posture",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextMuted
-                    )
-                    Text(
-                        text = summary.overallRiskLevel.displayName,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = postureColor
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${summary.totalAppsScanned} apps audited (${summary.userAppsScanned} user, ${summary.systemAppsScanned} system)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                }
-
-                // Custom Animated Circular Score Gauge
-                ScoreGauge(
-                    score = summary.averageRiskScore,
-                    color = postureColor,
-                    modifier = Modifier.size(72.dp)
+                Text(
+                    text = stat.category.displayName(),
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = "${stat.appsWithAccess} apps use it",
+                    fontSize = 12.sp,
+                    color = if (stat.appsWithAccess > 0) PrimaryLightBlue else TextMuted,
+                    fontWeight = FontWeight.Medium
                 )
             }
-
-            Spacer(modifier = Modifier.height(18.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onRescanClick,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(BorderStrokeColor))
-                ) {
-                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Re-Audit")
-                }
-
-                Button(
-                    onClick = onExportPdfClick,
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryBlue),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("PDF Report")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ScoreGauge(score: Int, color: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier,
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = 6.dp.toPx()
-            // Track arc
-            drawArc(
-                color = Color(0xFF334155),
-                startAngle = 135f,
-                sweepAngle = 270f,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            Spacer(modifier = Modifier.height(5.dp))
+            LinearProgressIndicator(
+                progress = { ratio },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = if (stat.category == RiskCategory.SPECIAL_ACCESS) BandCriticalColor else PrimaryLightBlue,
+                trackColor = DarkSurfaceVariant
             )
-            // Progress arc
-            val sweep = (score / 100f) * 270f
-            drawArc(
-                color = color,
-                startAngle = 135f,
-                sweepAngle = sweep,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
-            )
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
-                text = "$score",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            Text(
-                text = "AVG",
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
+                text = "${stat.appsDeclaring} ask for it",
+                fontSize = 10.sp,
                 color = TextMuted
             )
-        }
-    }
-}
-
-@Composable
-fun RiskDistributionCard(summary: DeviceScanSummary, onNavigateToAppList: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BorderStrokeColor, RoundedCornerShape(14.dp)),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Risk Band Distribution",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary
-                )
-                Text(
-                    text = "Rubric 0-100",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextMuted
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                DistributionPill("Critical\n(75-100)", summary.criticalRiskCount, RiskCriticalColor, Modifier.weight(1f))
-                DistributionPill("High\n(50-74)", summary.highRiskCount, RiskHighColor, Modifier.weight(1f))
-                DistributionPill("Medium\n(25-49)", summary.mediumRiskCount, RiskMediumColor, Modifier.weight(1f))
-                DistributionPill("Low\n(0-24)", summary.lowRiskCount, RiskLowColor, Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
-fun CategoryOverviewCard(summary: DeviceScanSummary) {
-    // Count apps requesting each of the key sensitive categories
-    val specialAccessCount = summary.appReports.count { it.specialAccess.any { a -> a.state == SpecialAccessState.ENABLED } }
-    val smsCount = summary.appReports.count { it.permissions.any { p -> p.category == RiskCategory.SMS && p.grantState == GrantState.GRANTED } }
-    val locCount = summary.appReports.count { it.permissions.any { p -> p.category == RiskCategory.LOCATION && p.grantState == GrantState.GRANTED } }
-    val camCount = summary.appReports.count { it.permissions.any { p -> p.category == RiskCategory.CAMERA_AND_MIC && p.grantState == GrantState.GRANTED } }
-    val sideloadCount = summary.appReports.count { it.inventory.isSideloaded }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, BorderStrokeColor, RoundedCornerShape(14.dp)),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Sensitive Surface Exposure",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { CategoryBadge("Special Access", "$specialAccessCount apps", RiskCriticalColor) }
-                item { CategoryBadge("SMS Access", "$smsCount apps", RiskHighColor) }
-                item { CategoryBadge("Location", "$locCount apps", RiskMediumColor) }
-                item { CategoryBadge("Camera/Mic", "$camCount apps", PrimaryLightBlue) }
-                item { CategoryBadge("Sideloaded", "$sideloadCount apps", RiskHighColor) }
-            }
-        }
-    }
-}
-
-@Composable
-fun CategoryBadge(title: String, subtitle: String, color: Color) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(DarkSurfaceVariant)
-            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 6.dp)
-    ) {
-        Column {
-            Text(text = title, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = color)
-            Text(text = subtitle, fontSize = 10.sp, color = TextSecondary)
-        }
-    }
-}
-
-@Composable
-fun DistributionPill(label: String, count: Int, color: Color, modifier: Modifier) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(color.copy(alpha = 0.12f))
-            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "$count", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 9.sp,
-                textAlign = TextAlign.Center,
-                color = TextSecondary
-            )
-        }
-    }
-}
-
-@Composable
-fun PriorityAppCard(appReport: AppRiskReport, onClick: () -> Unit) {
-    val levelColor = if (appReport.riskLevel == RiskLevel.CRITICAL) RiskCriticalColor else RiskHighColor
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .border(1.dp, levelColor.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = appReport.inventory.appLabel,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (appReport.inventory.isSideloaded) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(RiskHighColor.copy(alpha = 0.15f))
-                                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                            ) {
-                                Text("Sideloaded", fontSize = 9.sp, color = RiskHighColor, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                    Text(
-                        text = appReport.inventory.packageName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(levelColor.copy(alpha = 0.15f))
-                        .border(1.dp, levelColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "${appReport.riskScore} [${appReport.riskLevel.displayName.take(4)}]",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = levelColor
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            val topFinding = appReport.findings.firstOrNull()
-            if (topFinding != null) {
-                Text(
-                    text = "• ${topFinding.title}: ${topFinding.evidence}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = PrimaryLightBlue,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun CleanDeviceCard() {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, AccentGreen.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(32.dp))
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(text = "No High or Critical Threats", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = TextPrimary)
-                Text(text = "All audited apps fall within standard baseline security permissions.", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-            }
-        }
-    }
-}
-
-@Composable
-fun ErrorCard(message: String, onRetryClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = DarkSurface),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(imageVector = Icons.Default.ErrorOutline, contentDescription = null, tint = RiskCriticalColor, modifier = Modifier.size(40.dp))
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(text = "Audit Error", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
-            Text(text = message, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
-            Spacer(modifier = Modifier.height(14.dp))
-            Button(onClick = onRetryClick) { Text("Retry Scan") }
         }
     }
 }
