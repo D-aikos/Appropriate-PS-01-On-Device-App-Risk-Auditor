@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#0D47A1</color>
+    <color name="primary_dark">#002171</color>
+    <color name="accent">#00E676</color>
+
+    <color name="risk_critical">#D32F2F</color>
+    <color name="risk_high">#F57C00</color>
+    <color name="risk_medium">#FBC02D</color>
+    <color name="risk_low">#388E3C</color>
+
+    <color name="background_dark">#121212</color>
+    <color name="surface_dark">#1E1E1E</color>
+</resources>
