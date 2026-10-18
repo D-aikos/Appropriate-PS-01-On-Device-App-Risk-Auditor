@@ -1,127 +1,112 @@
-# Risk Scoring Engine Rubric & Methodology
+# PS-01 On-Device App Risk Auditor: Scoring Policy & Rubric
 
-## 1. Core Principles
-
-The risk scoring engine is a **pure, deterministic Kotlin component**. Given an application's metadata, permission grants, and special-access state, it produces a reproducible integer risk score ranging from **0 to 100**.
-
-1. **Highest Weight to Special Access**: In compliance with problem statement requirements, platform-level capabilities (Accessibility, Device Admin, Overlay, Package Install) represent the highest security leverage and receive the highest individual point allocations.
-2. **Declared vs Granted Differentiation**: Declared permissions that are not currently granted receive minimal informational weighting (or 0), while active runtime grants receive full scoring weight.
-3. **Combination Rules**: Correlated permissions that together enable an attack chain (e.g. Persistence + Sensitive Data Exfiltration + Network) generate compound findings with extra weighting.
-4. **Deduplication**: Correlated or subsumed permissions (e.g. `ACCESS_FINE_LOCATION` and `ACCESS_COARSE_LOCATION`) are deduplicated to prevent double-counting.
-5. **Three-Reason Enforcement**: To prevent high-severity false alarms driven by a single noisy signal, **any app with a raw score $\ge 50$ (High or Critical) MUST have at least three distinct, evidence-backed findings**. If an app has fewer than three distinct findings, its final score is capped at **49 (Medium)**.
-6. **Score Bounding**: The final accumulated score is strictly clamped to the interval $[0, 100]$.
+This document defines the deterministic scoring policy implemented in `com.appropriate.riskauditor.core.rules`. It is completely on-device, offline, and self-contained.
 
 ---
 
-## 2. Risk Bands
+## 1. Multipliers (Signal Verification State)
 
-| Band | Score Range | Description & Action |
-|---|---|---|
-| **LOW** | 0 – 24 | Standard application with minimal or expected permissions. Routine monitoring. |
-| **MEDIUM** | 25 – 49 | Elevated access (e.g. Camera/Mic, Background Persistence, or ungranted high permissions). Review recommended. |
-| **HIGH** | 50 – 74 | Significant attack surface or high-risk combination (e.g. Accessibility + Network, Spyware pattern). Must have $\ge 3$ distinct reasons. Prompt user review. |
-| **CRITICAL** | 75 – 100 | Severe exposure (e.g. Active Device Admin with Sideloaded origin, Overlay Hijacker with SMS access, or multiple malicious combination patterns). Must have $\ge 3$ distinct reasons. Immediate action advised. |
+The multiplier reflects certainty that a capability is active and accessible:
 
----
-
-## 3. Weighting Matrix
-
-### A. Special Access (Highest Weight)
-
-| Special Access Check | State | Points | Rule ID | Confidence |
-|---|---|---|---|---|
-| **Accessibility Service** | `ENABLED` | +25 | `RULE_SPECIAL_ACCESSIBILITY_ENABLED` | HIGH |
-| **Accessibility Service** | `DECLARED` (disabled) | +5 | `RULE_SPECIAL_ACCESSIBILITY_DECLARED` | MEDIUM |
-| **Active Device Admin** | `ENABLED` | +30 | `RULE_SPECIAL_DEVICE_ADMIN_ACTIVE` | HIGH |
-| **Active Device Admin** | `DECLARED` (inactive) | +5 | `RULE_SPECIAL_DEVICE_ADMIN_DECLARED` | MEDIUM |
-| **System Overlay (`SYSTEM_ALERT_WINDOW`)** | `GRANTED` | +18 | `RULE_SPECIAL_OVERLAY_GRANTED` | HIGH |
-| **System Overlay** | `DECLARED` (not granted) | +4 | `RULE_SPECIAL_OVERLAY_DECLARED` | MEDIUM |
-| **Notification Listener** | `ENABLED` | +20 | `RULE_SPECIAL_NOTIFICATION_LISTENER_ENABLED`| HIGH |
-| **Notification Listener** | `DECLARED` (disabled) | +4 | `RULE_SPECIAL_NOTIFICATION_LISTENER_DECLARED`| MEDIUM |
-| **Request Install Packages** | `GRANTED` | +18 | `RULE_SPECIAL_INSTALL_PACKAGES_GRANTED` | HIGH |
-| **Request Install Packages** | `DECLARED` (not granted) | +4 | `RULE_SPECIAL_INSTALL_PACKAGES_DECLARED` | MEDIUM |
-| **Usage Stats Access** | `GRANTED` | +12 | `RULE_SPECIAL_USAGE_STATS_GRANTED` | HIGH |
+| State of the Signal | Multiplier |
+|---|---|
+| **GRANTED / ENABLED** | 1.00 |
+| **NOT_RUNTIME** (normal/install-time permission, auto-granted) | 1.00 |
+| **UNKNOWN** (could not inspect/verify) | 0.50 |
+| **DECLARED only** (DENIED / DISABLED) | 0.30 |
+| **NOT_DECLARED / NOT_SUPPORTED** | 0.00 |
 
 ---
 
-### B. Standard Permission Categories (Runtime Granted)
+## 2. Single-Signal Points (Base Multiplier 1.0)
 
-| Category | Typical Permissions | Points per Grant (Max per Category) | Rule ID Prefix |
+Special access permissions are evaluated directly via `SA_*` rules and never double-counted in category findings.
+Category finding points = `min(cap, round(Σ weight × multiplier))`. No finding is generated if rounded points equal 0.
+
+| Rule ID | Signal | Points | Category Cap |
 |---|---|---|---|
-| **SMS** | `SEND_SMS`, `RECEIVE_SMS`, `READ_SMS`, `RECEIVE_MMS` | +8 per granted perm (Max: 16) | `RULE_PERM_SMS_` |
-| **Contacts & Call Logs** | `READ_CONTACTS`, `WRITE_CONTACTS`, `READ_CALL_LOG` | +6 per granted perm (Max: 14) | `RULE_PERM_CONTACTS_` |
-| **Camera & Microphone** | `CAMERA`, `RECORD_AUDIO` | +6 per granted perm (Max: 12) | `RULE_PERM_MEDIA_` |
-| **Location** | `ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION` | +6 per granted perm (Max: 12) | `RULE_PERM_LOC_` |
-| **Phone & Identity** | `READ_PHONE_STATE`, `CALL_PHONE`, `READ_PHONE_NUMBERS` | +5 per granted perm (Max: 10) | `RULE_PERM_PHONE_` |
-| **Storage & Media** | `MANAGE_EXTERNAL_STORAGE`, `READ_EXTERNAL_STORAGE` | +5 per granted perm (Max: 10) | `RULE_PERM_STORAGE_` |
-| **Background & Persistence**| `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE` | +4 per granted perm (Max: 8) | `RULE_PERM_BG_` |
-| **Network** | `INTERNET`, `ACCESS_NETWORK_STATE` | +2 per granted perm (Max: 4) | `RULE_PERM_NET_` |
-
-*Note: Declared-only permissions (denied or not granted) receive a nominal +1 point for visibility, capped at +3 per category.*
-
----
-
-## 4. Compound Combination Rules
-
-Combination rules fire when mutually reinforcing capabilities are present:
-
-1. **`RULE_COMBO_SPYWARE` (+20 points)**:
-   - *Condition*: (Background Persistence granted) AND (SMS OR Contacts OR Call Logs OR Location granted) AND (Internet declared/granted).
-   - *Explanation*: App can start automatically at boot or run persistently in the background while harvesting sensitive personal data and transmitting it over the network.
-2. **`RULE_COMBO_TOLL_FRAUD` (+18 points)**:
-   - *Condition*: (`SEND_SMS` granted) AND (`INTERNET` granted/declared) AND (Background Persistence granted).
-   - *Explanation*: App has capability to silently dispatch premium SMS messages and communicate with remote command-and-control servers.
-3. **`RULE_COMBO_AUDIO_SURVEILLANCE` (+16 points)**:
-   - *Condition*: (`RECORD_AUDIO` granted) AND (Background Persistence granted) AND (`INTERNET` granted/declared).
-   - *Explanation*: App can capture ambient microphone audio in the background and transmit recordings over the network.
-4. **`RULE_COMBO_OVERLAY_STEALER` (+22 points)**:
-   - *Condition*: (System Overlay granted/enabled) AND (Accessibility enabled OR Notification Listener enabled OR SMS/Contacts granted).
-   - *Explanation*: App can draw over other apps (tapjacking/phishing) while intercepting keystrokes, notifications (2FA tokens), or credential inputs.
-5. **`RULE_COMBO_MALICIOUS_DROPPER` (+20 points)**:
-   - *Condition*: (Request Install Packages granted) AND (`INTERNET` granted/declared) AND (Storage or Persistence granted).
-   - *Explanation*: App can download arbitrary APK payloads from the internet and initiate silent or deceptive package installations.
-6. **`RULE_COMBO_RANSOMWARE_PATTERN` (+25 points)**:
-   - *Condition*: (`MANAGE_EXTERNAL_STORAGE` granted) AND (Active Device Admin OR Overlay) AND (Persistence granted).
-   - *Explanation*: Broad file system access combined with device administrator or screen-locking capabilities resembles ransomware behavior.
-7. **`RULE_HEURISTIC_SIDELOADED_HIGH_RISK` (+15 points)**:
-   - *Condition*: App installer source is NOT Google Play Store (null, package installer, or unknown) AND App has at least 2 high-risk permissions or special access.
-   - *Explanation*: Sideloaded application bypassing official app store verification possessing high-privilege access.
-8. **`RULE_HEURISTIC_OUTDATED_TARGET_SDK` (+10 points)**:
-   - *Condition*: App targets SDK $< 29$ (Android 9 or earlier).
-   - *Explanation*: App targets an obsolete Android version, allowing it to bypass modern runtime permission enforcement and storage sandboxing.
+| `SA_ACCESSIBILITY` | Accessibility service | 30 | — |
+| `SA_DEVICE_ADMIN` | Device admin (0 if device/profile owner) | 25 | — |
+| `SA_NOTIF_LISTENER` | Notification listener | 22 | — |
+| `SA_OVERLAY` | Draw over other apps (`SYSTEM_ALERT_WINDOW`) | 18 | — |
+| `SA_INSTALL_PACKAGES` | Install unknown apps (`REQUEST_INSTALL_PACKAGES`) | 16 | — |
+| `SA_USAGE_STATS` | Usage access (`PACKAGE_USAGE_STATS`) | 10 | — |
+| `CAT_SMS` | READ_SMS 14, RECEIVE_SMS 10, SEND_SMS 12, RECEIVE_MMS 3, RECEIVE_WAP_PUSH 3 | Σ | 30 |
+| `CAT_CONTACTS_CALLS` | READ_CONTACTS 8, WRITE_CONTACTS 4, READ_CALL_LOG 10, WRITE_CALL_LOG 6, PROCESS_OUTGOING_CALLS 6 | Σ | 18 |
+| `CAT_CAMERA_MIC` | CAMERA 7, RECORD_AUDIO 9 | Σ | 16 |
+| `CAT_LOCATION` | COARSE 3, FINE 6, BACKGROUND 8 | Σ | 14 |
+| `CAT_PHONE_IDENTITY` | READ_PHONE_STATE 4, READ_PHONE_NUMBERS 4, CALL_PHONE 5, ANSWER_PHONE_CALLS 3, GET_ACCOUNTS 3 | Σ | 10 |
+| `CAT_STORAGE_MEDIA` | MANAGE_EXTERNAL_STORAGE 12, READ_MEDIA_IMAGES 5, READ_MEDIA_VIDEO 5, READ/WRITE_EXTERNAL_STORAGE 5 (once), READ_MEDIA_AUDIO 2, VISUAL_USER_SELECTED 2 | Σ | 14 |
+| `CAT_BACKGROUND` | RECEIVE_BOOT_COMPLETED 3, FOREGROUND_SERVICE* 2, IGNORE_BATTERY_OPT 4, WAKE_LOCK 1, SCHEDULE_EXACT_ALARM 1, USE_FULL_SCREEN_INTENT 3 | Σ | 10 |
+| (network) | `INTERNET` / `ACCESS_NETWORK_STATE` | **0 alone**; precondition for combinations | — |
 
 ---
 
-## 5. Deduplication and Correlated Evidence
+## 3. Combination Rules
 
-- **Location deduplication**: If `ACCESS_FINE_LOCATION` and `ACCESS_COARSE_LOCATION` are both granted, only `ACCESS_FINE_LOCATION` generates a weighted finding; coarse location is collapsed into the same evidence string.
-- **Storage deduplication**: If `MANAGE_EXTERNAL_STORAGE` is granted, legacy `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` findings are consolidated.
+Bonus points = `round(base × lowest multiplier among required signals)`. Each fires at most once.
+
+| Rule ID | Requires | Base | Confidence | Heuristic | Action |
+|---|---|---|---|---|---|
+| `COMBO_ACCESS_OVERLAY` | accessibility + overlay | 25 | High | no | `OPEN_ACCESSIBILITY_SETTINGS` |
+| `COMBO_SMS_NET_BOOT_SIDELOAD` | (READ_SMS or RECEIVE_SMS) + INTERNET + RECEIVE_BOOT_COMPLETED + install source SIDELOADED. (If source is UNKNOWN: base 15, confidence Medium) | 25 | High | no | `UNINSTALL` |
+| `COMBO_ADMIN_NON_MGMT` | active/declared device admin, not device/profile owner, package not in MDM allowlist | 18 | Medium | **yes** | `OPEN_DEVICE_ADMIN_SETTINGS` |
+| `COMBO_NOTIF_NET` | notification listener + INTERNET | 12 | Medium | no | `OPEN_NOTIFICATION_LISTENER_SETTINGS` |
+| `COMBO_DROPPER` | REQUEST_INSTALL_PACKAGES + SIDELOADED + (accessibility or overlay) | 15 | Medium | no | `OPEN_INSTALL_SOURCES_SETTINGS` |
+| `COMBO_SURVEILLANCE` | (CAMERA or RECORD_AUDIO) + ACCESS_BACKGROUND_LOCATION + INTERNET + RECEIVE_BOOT_COMPLETED | 12 | Medium | no | `OPEN_APP_SETTINGS` |
+| `COMBO_HARVEST` | (READ_CONTACTS or READ_CALL_LOG) + (READ_SMS or RECEIVE_SMS) + INTERNET | 10 | Medium | no | `OPEN_APP_SETTINGS` |
+| `CTX_MISMATCH` | label whole-word matches {torch, flashlight, calculator, wallpaper, ringtone, compass, qr, barcode, ruler, level}, not system app, AND holds SMS, contacts, accessibility, or admin | 15 | Low (if declared only), Medium otherwise | **yes** | `OPEN_APP_SETTINGS` |
+
+### Provenance Finding (`PROV_SIDELOADED`)
+- **Points:** +8 (Medium confidence, action `OPEN_INSTALL_SOURCES_SETTINGS`).
+- **Condition:** Installed outside a store (`SIDELOADED`), not a system app, and holds at least one GRANTED dangerous permission or ENABLED special access. Source UNKNOWN gives 0. Store apps receive no discount (no negative points).
 
 ---
 
-## 6. Three-Reason Enforcement Algorithm
+## 4. Final Score, Risk Bands, and Three-Reason Rule
 
-```kotlin
-fun finalizeAppRisk(rawScore: Int, findings: List<RiskFinding>): Pair<Int, RiskLevel> {
-    val clampedScore = rawScore.coerceIn(0, 100)
-    val distinctEvidenceCount = findings.map { it.ruleId }.distinct().size
+- **Final Score:** $\text{clamp}(\sum \text{finding points}, 0, 100)$.
+- **Four Risk Bands:**
+  - **LOW:** 0 – 24
+  - **MEDIUM:** 25 – 49
+  - **HIGH:** 50 – 74
+  - **CRITICAL:** 75 – 100
+- **Three-Reason Enforcement Policy:**
+  If the raw score would fall into High (50–74) or Critical (75–100), but fewer than 3 distinct evidence-backed findings (with points > 0) are present, the final score is strictly capped at **49 (Medium)**, and `cappedForEvidence = true`. Findings are never fabricated to reach 3.
+- **Sorting:** Findings are sorted deterministically by points descending, then `ruleId` ascending.
 
-    // If score falls into High (50-74) or Critical (75-100), verify at least 3 distinct findings
-    val finalScore = if (clampedScore >= 50 && distinctEvidenceCount < 3) {
-        // Cap at upper boundary of Medium band
-        49
-    } else {
-        clampedScore
-    }
+---
 
-    val finalLevel = when {
-        finalScore >= 75 -> RiskLevel.CRITICAL
-        finalScore >= 50 -> RiskLevel.HIGH
-        finalScore >= 25 -> RiskLevel.MEDIUM
-        else -> RiskLevel.LOW
-    }
+## 5. Worked Examples
 
-    return Pair(finalScore, finalLevel)
-}
-```
-This guarantees zero unexplainable High or Critical ratings.
+### Example 1 (Vector T2 — Store App with Accessibility Enabled)
+- **Input:** Store installed (`com.android.vending`), Accessibility Service `ENABLED`.
+- **Calculations:**
+  - `SA_ACCESSIBILITY`: $30 \times 1.0 = 30$ points.
+- **Score:** 30 $\to$ **MEDIUM**, 1 finding, `cappedForEvidence = false` (score is in Medium band, capping rule only applies to raw scores $\ge 50$).
+
+### Example 2 (Vector T3 — Sideloaded App with Accessibility + Overlay Enabled)
+- **Input:** Sideloaded origin, Accessibility Service `ENABLED`, System Overlay `ENABLED`.
+- **Calculations:**
+  - `SA_ACCESSIBILITY`: $30 \times 1.0 = 30$ points.
+  - `SA_OVERLAY`: $18 \times 1.0 = 18$ points.
+  - `COMBO_ACCESS_OVERLAY`: $\text{round}(25 \times \min(1.0, 1.0)) = 25$ points.
+  - `PROV_SIDELOADED`: Sideloaded + active special access = 8 points.
+- **Score:** $30 + 18 + 25 + 8 = \mathbf{81}$ $\to$ **CRITICAL**, 4 distinct findings.
+
+### Example 3 (Vector T6 — Store Messenger App with Broad Runtime Permissions)
+- **Input:** Store installed, granted `READ_CONTACTS`, `CAMERA`, `RECORD_AUDIO`, `ACCESS_COARSE_LOCATION`, `ACCESS_FINE_LOCATION`, `READ_PHONE_STATE`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE`, `READ_MEDIA_IMAGES`.
+- **Calculations:**
+  - `CAT_CONTACTS_CALLS`: $8 \times 1.0 = 8$ points.
+  - `CAT_CAMERA_MIC`: $7 + 9 = 16$ (capped at 16) points.
+  - `CAT_LOCATION`: $3 + 6 = 9$ points.
+  - `CAT_PHONE_IDENTITY`: $4 \times 1.0 = 4$ points.
+  - `CAT_BACKGROUND`: $3 + 2 = 5$ points.
+  - `CAT_STORAGE_MEDIA`: $5 \times 1.0 = 5$ points.
+- **Score:** $8 + 16 + 9 + 4 + 5 + 5 = \mathbf{47}$ $\to$ **MEDIUM**, 6 distinct findings. Demonstrates that legitimate multi-featured store apps remain in Medium risk without unwarranted alert fatigue.
+
+---
+
+## 6. What This Score Is Not
+
+**Permissions alone do not prove an application is malicious.** This score measures structural capability leverage, sensitive exposure, and attack-surface combinations on this specific device. It never asserts definitive criminal intent or replaces platform security sandboxing.

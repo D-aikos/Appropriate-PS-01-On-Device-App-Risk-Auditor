@@ -53,7 +53,7 @@ class SpecialAccessSnapshot(
         val declaredPerms = info.requestedPermissions?.toSet() ?: emptySet()
         val services = info.services ?: emptyArray()
         val receivers = info.receivers ?: emptyArray()
-        val uid = info.applicationInfo?.uid ?: Process.myUid()
+        val uid = info.applicationInfo?.uid ?: try { Process.myUid() } catch (e: Throwable) { 0 }
 
         val results = mutableListOf<SpecialAccessAudit>()
 
